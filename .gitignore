@@ -1,0 +1,16 @@
+# Environment variables
+.env
+
+# Generated Nginx config
+nginx/conf.d/default.conf
+
+# SSL certificates and ACME challenges
+certbot/conf/*
+!certbot/conf/.gitkeep
+certbot/www/*
+!certbot/www/.gitkeep
+
+# Temporary files and logs
+*.log
+.DS_Store
+Thumbs.db
