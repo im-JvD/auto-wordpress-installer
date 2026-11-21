@@ -498,14 +498,28 @@ EOF
 
     # Ensure permissions and extensions
     if [[ "$selected_ws" == "openlitespeed" ]]; then
-        docker exec wp_ols chown -R nobody:nogroup /var/www/vhosts/localhost/html 2>/dev/null || true
-        docker exec wp_ols chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+        docker exec wp_ols sh -c '
+            mkdir -p /tmp/lshttpd /usr/local/lsws/logs
+            chmod 777 /tmp/lshttpd
+            chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/html 2>/dev/null || true
+            chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+            rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* 2>/dev/null || true
+            for bin in /usr/local/lsws/lsphp*/bin/lsphp; do
+                if [ -x "$bin" ]; then
+                    ln -sf "$bin" /usr/local/lsws/fcgi-bin/lsphp
+                    break
+                fi
+            done
+        ' 2>/dev/null || true
         ensure_php_extensions
+        docker restart wp_ols >/dev/null 2>&1 || true
     else
         docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
         docker exec wp_app chmod -R 775 /var/www/html 2>/dev/null || true
         ensure_php_extensions
     fi
+
+    setup_systemd_service
 
     echo ""
     log_info "Waiting for database and WordPress services to stabilize..."
@@ -631,11 +645,61 @@ sync_ols_config() {
                 ols/vhconf.conf.template > ols/conf/vhosts/Example/vhconf.conf
 
             if docker ps --filter "name=wp_ols" --filter "status=running" | grep -q "wp_ols"; then
+                docker exec wp_ols sh -c '
+                    mkdir -p /tmp/lshttpd /usr/local/lsws/logs
+                    chmod 777 /tmp/lshttpd
+                    chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/html 2>/dev/null || true
+                    chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+                    rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* 2>/dev/null || true
+                    for bin in /usr/local/lsws/lsphp*/bin/lsphp; do
+                        if [ -x "$bin" ]; then
+                            ln -sf "$bin" /usr/local/lsws/fcgi-bin/lsphp
+                            break
+                        fi
+                    done
+                ' 2>/dev/null || true
                 docker restart wp_ols >/dev/null 2>&1 || true
             fi
             log_success "OpenLiteSpeed configuration synchronized successfully."
         fi
     fi
+}
+
+# ------------------------------------------------------------------------------
+# Systemd Auto-Start Service Configuration (Reboot / Crash Resilience)
+# ------------------------------------------------------------------------------
+setup_systemd_service() {
+    log_info "Configuring systemd auto-start service (wp-docker.service)..."
+    if [[ ! -d /etc/systemd/system ]]; then
+        log_warn "systemd directory /etc/systemd/system not found. Skipping auto-start service."
+        return 0
+    fi
+
+    local docker_bin
+    docker_bin=$(command -v docker 2>/dev/null || echo "/usr/bin/docker")
+
+    cat <<EOF > /etc/systemd/system/wp-docker.service
+[Unit]
+Description=WordPress Isolated Docker Stack
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=${SCRIPT_DIR}
+ExecStart=${docker_bin} compose up -d
+ExecStop=${docker_bin} compose stop
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl enable wp-docker.service >/dev/null 2>&1 || true
+    log_success "Systemd service 'wp-docker.service' is active and enabled on system boot!"
 }
 
 # ------------------------------------------------------------------------------
@@ -666,14 +730,28 @@ start_restart_stack() {
     docker compose up -d
 
     if [[ "$current_ws" == "openlitespeed" ]]; then
-        docker exec wp_ols chown -R nobody:nogroup /var/www/vhosts/localhost/html 2>/dev/null || true
-        docker exec wp_ols chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+        docker exec wp_ols sh -c '
+            mkdir -p /tmp/lshttpd /usr/local/lsws/logs
+            chmod 777 /tmp/lshttpd
+            chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/html 2>/dev/null || true
+            chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+            rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* 2>/dev/null || true
+            for bin in /usr/local/lsws/lsphp*/bin/lsphp; do
+                if [ -x "$bin" ]; then
+                    ln -sf "$bin" /usr/local/lsws/fcgi-bin/lsphp
+                    break
+                fi
+            done
+        ' 2>/dev/null || true
         ensure_php_extensions
+        docker restart wp_ols >/dev/null 2>&1 || true
     else
         ensure_php_extensions
         docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
         docker exec wp_app chmod -R 775 /var/www/html 2>/dev/null || true
     fi
+
+    setup_systemd_service
 
     log_success "All stack services (Web Server: ${current_ws}, Database, Certbot) are active and running."
 }
@@ -866,6 +944,13 @@ uninstall_stack() {
     log_info "Cleaning configuration and SSL cache..."
     rm -f .env nginx/conf.d/default.conf ols/conf/httpd_config.conf ols/conf/vhosts/Example/vhconf.conf ols/conf/vhosts/localhost/vhconf.conf "${SCRIPT_DIR}/html"
     rm -rf certbot/conf/* certbot/www/*
+
+    if [[ -f /etc/systemd/system/wp-docker.service ]]; then
+        systemctl disable wp-docker.service >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/wp-docker.service
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        log_info "Removed systemd service wp-docker.service."
+    fi
 
     if [[ -f "/usr/local/bin/wordpress" ]]; then
         rm -f "/usr/local/bin/wordpress"
@@ -1141,10 +1226,11 @@ service_menu() {
         echo -e " [${C_BOLD}2${C_RESET}] Stop Stack Services (Safe Pause & Free Ports)"
         echo -e " [${C_BOLD}3${C_RESET}] Service Status & Resource Usage (Stats)"
         echo -e " [${C_BOLD}4${C_RESET}] View Service Logs (Nginx, PHP, Database, Certbot)"
+        echo -e " [${C_BOLD}5${C_RESET}] Enable / Configure Auto-Start on Boot (systemd service)"
         echo -e " [${C_BOLD}0${C_RESET}] Back to Main Menu"
         echo -e "${C_CYAN}====================================================================${C_RESET}"
 
-        if ! read -r -p "Enter choice [0-4] and press Enter: " srv_choice; then
+        if ! read -r -p "Enter choice [0-5] and press Enter: " srv_choice; then
             break
         fi
 
@@ -1163,6 +1249,10 @@ service_menu() {
                 ;;
             4)
                 view_logs
+                ;;
+            5)
+                setup_systemd_service
+                read -r -p "Press [Enter] to return..." _
                 ;;
             0)
                 break
@@ -1240,10 +1330,23 @@ switch_web_server() {
         docker compose up -d openlitespeed
 
         sleep 2
-        # Ensure proper file permissions and database extensions
-        docker exec wp_ols chown -R nobody:nogroup /var/www/vhosts/localhost/html 2>/dev/null || true
-        docker exec wp_ols chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+        # Ensure proper file permissions, socket directory, and database extensions
+        docker exec wp_ols sh -c '
+            mkdir -p /tmp/lshttpd /usr/local/lsws/logs
+            chmod 777 /tmp/lshttpd
+            chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/html 2>/dev/null || true
+            chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+            rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* 2>/dev/null || true
+            for bin in /usr/local/lsws/lsphp*/bin/lsphp; do
+                if [ -x "$bin" ]; then
+                    ln -sf "$bin" /usr/local/lsws/fcgi-bin/lsphp
+                    break
+                fi
+            done
+        ' 2>/dev/null || true
         ensure_php_extensions
+        docker restart wp_ols >/dev/null 2>&1 || true
+        setup_systemd_service
     else
         log_info "Stopping OpenLiteSpeed container..."
         docker compose --profile ols stop openlitespeed 2>/dev/null || true
@@ -1275,6 +1378,7 @@ switch_web_server() {
         ensure_php_extensions
         docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
         docker exec wp_app chmod -R 775 /var/www/html 2>/dev/null || true
+        setup_systemd_service
     fi
 
     sleep 2

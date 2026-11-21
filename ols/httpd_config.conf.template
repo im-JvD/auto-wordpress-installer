@@ -37,16 +37,15 @@ extprocessor lsphp {
   retryTimeout            0
   persistConn             1
   respBuffer              0
-  autoStart               2
+  autoStart               1
   path                    fcgi-bin/lsphp
   backlog                 100
-  runOnStartUp            1
-  extMaxIdleTime          300
+  instances               1
   priority                0
-  memSoftLimit            2047M
-  memHardLimit            2047M
-  procSoftLimit           400
-  procHardLimit           400
+  memSoftLimit            0
+  memHardLimit            0
+  procSoftLimit           0
+  procHardLimit           0
 }
 
 scriptHandler {

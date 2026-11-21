@@ -90,10 +90,11 @@ wordpress
 * **توقف phpMyAdmin:** غیرفعال‌سازی و بستن آنی phpMyAdmin جهت حفظ کامل امنیت و آزادسازی حافظه رم سرور.
 
 ### [3] عملیات و پایش سرویس‌ها (Service Operations)
-* **Start / Restart Services:** اجرای مجدد یا ری‌استارت تمام کانتینرهای استک (Nginx, WordPress, Database, Certbot).
+* **Start / Restart Services:** اجرای مجدد یا ری‌استارت تمام کانتینرهای استک (Nginx / OpenLiteSpeed, WordPress, Database, Certbot).
 * **Stop Services:** متوقف کردن امن تمام کانتینرها بدون حذف دیتابیس یا فایل‌ها (آزادسازی فوری پورت‌ها و منابع پردازنده و رم).
 * **Service Status & Stats:** مشاهده وضعیت سلامت کانتینرها (Healthcheck)، میزان مصرف پردازنده و رم، و تست زنده پاسخ‌دهی سایت.
-* **View Service Logs:** مشاهده لاگ‌های اختصاصی وب‌سرور Nginx، سرویس PHP-FPM، دیتابیس، تمدید خودکار Certbot یا استریم زنده تمامی لاگ‌ها.
+* **View Service Logs:** مشاهده لاگ‌های اختصاصی وب‌سرور، سرویس PHP، دیتابیس، تمدید خودکار Certbot یا استریم زنده تمامی لاگ‌ها.
+* **Auto-Start on Boot (systemd):** فعال‌سازی و ساخت خودکار سرویس سیستمی `wp-docker.service` جهت اجرای خودکار تمام کانتینرهای استک پس از ری‌استارت یا ریبوت سرور مجازی بدون نیاز به دخالت کاربر.
 
 ### [4] نگهداری و بروزرسانی‌ها (Maintenance & Updates)
 * **Switch / Change Web Server:** جابجایی و تغییر آنی و کاملاً ایمن بین وب‌سرورهای OpenLiteSpeed و Nginx بدون داون‌تایم و با حفظ ۱۰۰٪ فایل‌ها و دیتابیس.

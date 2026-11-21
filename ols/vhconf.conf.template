@@ -13,6 +13,11 @@ index  {
   autoIndex               0
 }
 
+# Script Handler for PHP execution via LSAPI
+scripthandler {
+  add                     lsapi:lsphp php
+}
+
 errorlog logs/error.log {
   useServer               0
   logLevel                WARN
