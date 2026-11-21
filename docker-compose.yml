@@ -66,7 +66,7 @@ services:
     container_name: wp_ols
     restart: unless-stopped
     profiles: ["ols"]
-    entrypoint: ["/bin/bash", "-c", "mkdir -p /usr/local/lsws/logs /var/www/vhosts/localhost/lscache && chmod -R 777 /var/www/vhosts/localhost/lscache 2>/dev/null || true && chown -R nobody:nogroup /usr/local/lsws/logs /var/www/vhosts/localhost/lscache 2>/dev/null || true && for bin in /usr/local/lsws/lsphp*/bin/lsphp; do [ -x \"$$bin\" ] && ln -sf \"$$bin\" /usr/local/lsws/fcgi-bin/lsphp && ln -sf \"$$bin\" /usr/local/bin/php 2>/dev/null; done && su -s /bin/sh nobody -c \"PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000\" & exec /entrypoint.sh"]
+    entrypoint: ["/bin/bash", "-c", "mkdir -p /usr/local/lsws/logs /var/www/vhosts/localhost/lscache && chmod -R 777 /var/www/vhosts/localhost/lscache 2>/dev/null || true && chown -R nobody:nogroup /usr/local/lsws/logs /var/www/vhosts/localhost/lscache 2>/dev/null || true && for bin in /usr/local/lsws/lsphp*/bin/lsphp; do [ -x \"$$bin\" ] && ln -sf \"$$bin\" /usr/local/lsws/fcgi-bin/lsphp && ln -sf \"$$bin\" /usr/local/bin/php 2>/dev/null; done && (while true; do if ! pgrep -f 'lsphp -b 127.0.0.1:9000' >/dev/null; then su -s /bin/sh nobody -c 'PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000' >/dev/null 2>&1; fi; sleep 2; done) & exec /entrypoint.sh"]
     ulimits:
       nofile:
         soft: 65535

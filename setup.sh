@@ -498,8 +498,8 @@ EOF
 
     # Ensure permissions and extensions
     if [[ "$selected_ws" == "openlitespeed" ]]; then
-        init_ols_container
         ensure_php_extensions
+        init_ols_container
     else
         docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
         docker exec wp_app chmod -R 775 /var/www/html 2>/dev/null || true
@@ -617,12 +617,23 @@ ensure_php_extensions() {
             docker exec wp_ols apt-get update -y >/dev/null 2>&1 || true
             docker exec wp_ols apt-get install -y "${missing_ols_pkgs[@]}" >/dev/null 2>&1 || true
             docker exec wp_ols pkill -9 lsphp 2>/dev/null || true
+            docker exec wp_ols su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1 || true
             docker exec wp_ols /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 || true
             sleep 2
             log_success "OpenLiteSpeed PHP extensions installed and active: ${missing_ols_pkgs[*]}"
         else
             log_success "All required PHP extensions (pdo_mysql, zip, curl, intl, mbstring, gd) are active in OpenLiteSpeed."
         fi
+
+        # Ensure LSPHP daemon and watchdog supervisor are actively running
+        docker exec wp_ols sh -c '
+            if ! pgrep -f "lsphp -b 127.0.0.1:9000" >/dev/null; then
+                su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1 &
+            fi
+            if ! pgrep -f "while true.*lsphp" >/dev/null; then
+                (while true; do if ! pgrep -f "lsphp -b 127.0.0.1:9000" >/dev/null; then su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1; fi; sleep 2; done) &
+            fi
+        ' 2>/dev/null || true
     fi
 }
 
@@ -699,11 +710,14 @@ HTACCESS_EOF
             chown nobody:nogroup /var/www/vhosts/localhost/html/.htaccess 2>/dev/null || true
         fi
 
-        # 6. Start/Ensure LSPHP is actively listening on 127.0.0.1:9000
+        # 6. Start/Ensure LSPHP is actively listening on 127.0.0.1:9000 and start watchdog
         if ! pgrep -f "lsphp -b 127.0.0.1:9000" >/dev/null; then
             pkill -9 lsphp 2>/dev/null || true
             su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1 &
             sleep 1
+        fi
+        if ! pgrep -f "while true.*lsphp" >/dev/null; then
+            (while true; do if ! pgrep -f "lsphp -b 127.0.0.1:9000" >/dev/null; then su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1; fi; sleep 2; done) &
         fi
     ' 2>/dev/null || true
 
@@ -721,11 +735,14 @@ HTACCESS_EOF
     docker exec wp_ols /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 || docker restart wp_ols >/dev/null 2>&1 || true
     sleep 3
 
-    # Fail-safe: Ensure LSPHP daemon is active on 127.0.0.1:9000
+    # Fail-safe: Ensure LSPHP daemon & watchdog are active on 127.0.0.1:9000
     docker exec wp_ols sh -c '
-        if ! pgrep -f "lsphp" >/dev/null; then
+        if ! pgrep -f "lsphp -b 127.0.0.1:9000" >/dev/null; then
             su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1 &
             sleep 1
+        fi
+        if ! pgrep -f "while true.*lsphp" >/dev/null; then
+            (while true; do if ! pgrep -f "lsphp -b 127.0.0.1:9000" >/dev/null; then su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1; fi; sleep 2; done) &
         fi
     ' 2>/dev/null || true
 
@@ -737,6 +754,9 @@ HTACCESS_EOF
         docker exec wp_ols sh -c '
             pkill -9 lsphp 2>/dev/null || true
             su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1 &
+            if ! pgrep -f "while true.*lsphp" >/dev/null; then
+                (while true; do if ! pgrep -f "lsphp -b 127.0.0.1:9000" >/dev/null; then su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1; fi; sleep 2; done) &
+            fi
             sleep 2
         ' 2>/dev/null || true
         docker exec wp_ols /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 || true
@@ -849,8 +869,8 @@ start_restart_stack() {
     if [[ "$current_ws" == "openlitespeed" ]]; then
         sync_ols_config
         docker compose up -d --force-recreate openlitespeed
-        init_ols_container
         ensure_php_extensions
+        init_ols_container
     else
         sync_nginx_config
         docker compose up -d
@@ -914,6 +934,7 @@ update_dependencies() {
         docker exec wp_ols chown -R nobody:nogroup /var/www/vhosts/localhost/html 2>/dev/null || true
         docker exec wp_ols chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
         ensure_php_extensions
+        init_ols_container
     else
         sync_nginx_config
         ensure_php_extensions
@@ -1459,8 +1480,8 @@ switch_web_server() {
         docker compose up -d --force-recreate openlitespeed
 
         sleep 2
-        init_ols_container
         ensure_php_extensions
+        init_ols_container
         setup_systemd_service
     else
         log_info "Stopping OpenLiteSpeed container..."
@@ -1551,6 +1572,7 @@ change_php_version() {
         sleep 2
         sync_ols_config
         ensure_php_extensions
+        init_ols_container
         local updated_php
         updated_php=$(docker exec wp_ols php -v 2>/dev/null | head -n 1 || echo "Updated")
     else
