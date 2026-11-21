@@ -69,11 +69,13 @@ wordpress
  [1] Deploy Fresh WordPress (Nginx, PHP, WP Core, Isolated DB & SSL)
  [2] Deploy Stack for Migration / Restore (Duplicator & Backupino Ready)
  [3] Create New Database & User (Inside Existing DB Container)
- [4] Update Dependencies & Container Images
- [5] Service Status & Health Check
- [6] View Service Logs (Nginx, PHP, Database, Certbot)
- [7] Self-Update Script (Pull latest from GitHub)
- [8] Complete Uninstall (Safe Purge of this Stack Only)
+ [4] Start / Restart Services (Resume or reboot stack)
+ [5] Stop Services (Safely pause stack & release ports)
+ [6] Service Status & Health Check
+ [7] View Service Logs (Nginx, PHP, Database, Certbot)
+ [8] Update Dependencies & Container Images
+ [9] Self-Update Script (Pull latest from GitHub)
+ [10] Complete Uninstall (Safe Purge of this Stack Only)
  [0] Exit
 ====================================================================
 ```
@@ -96,20 +98,27 @@ wordpress
 * اتصال امن به کانتینر در حال اجرای دیتابیس.
 * امکان تعریف دیتابیس‌ها و کاربران مجزا با دسترسی‌های تفکیک‌شده بدون نیاز به راه‌اندازی مجدد استک.
 
-### [4] بروزرسانی ایمیج‌ها و وابستگی‌ها (Update Dependencies)
+### [4] روشن کردن یا راه‌اندازی مجدد (Start / Restart Services)
+* اجرای مجدد یا ری‌استارت تمام کانتینرهای استک (Nginx, WordPress, Database, Certbot).
+
+### [5] توقف کامل استک (Stop Services)
+* متوقف کردن امن تمام کانتینرها بدون حذف دیتابیس یا فایل‌ها.
+* آزاد شدن آنی پورت‌ها و منابع پردازنده و رم سرور.
+
+### [6] بررسی وضعیت و سلامت سرویس‌ها (Service Status)
+* مشاهده وضعیت سلامت کانتینرها (Healthcheck)، میزان مصرف پردازنده و رم، و تست زنده پاسخ‌دهی سایت.
+
+### [7] مشاهده لاگ‌ها (View Logs)
+* مشاهده لاگ‌های وب‌سرور Nginx، سرویس PHP-FPM، دیتابیس، تمدید خودکار Certbot یا استریم زنده تمامی لاگ‌ها.
+
+### [8] بروزرسانی ایمیج‌ها و وابستگی‌ها (Update Dependencies)
 * دریافت آخرین نسخه‌های پایدار ایمیج‌های داکر (Nginx, WordPress, MariaDB/MySQL).
 * بازسازی مجدد کانتینرها بدون حذف اطلاعات سایت و دیتابیس.
 
-### [5] بررسی وضعیت و سلامت سرویس‌ها (Service Status)
-* مشاهده وضعیت سلامت کانتینرها (Healthcheck)، میزان مصرف پردازنده و رم، و تست زنده پاسخ‌دهی سایت.
-
-### [6] مشاهده لاگ‌ها (View Logs)
-* مشاهده لاگ‌های وب‌سرور Nginx، سرویس PHP-FPM، دیتابیس، تمدید خودکار Certbot یا استریم زنده تمامی لاگ‌ها.
-
-### [7] بروزرسانی خودکار اسکریپت (Self-Update)
+### [9] بروزرسانی خودکار اسکریپت (Self-Update)
 * دریافت آخرین تغییرات و کدهای جدید از مخزن گیت‌هاب با یک کلیک و بارگذاری مجدد برنامه.
 
-### [8] حذف کامل و ایمن (Complete Uninstall)
+### [10] حذف کامل و ایمن (Complete Uninstall)
 * حذف با تاییدیه متنی `yes`.
 * متوقف کردن و حذف **فقط و فقط** کانتینرها، ولوم‌ها و شبکه مرتبط با این پروژه.
 * تضمین عدم دستکاری به سایر سرویس‌ها، دیتابیس‌ها یا کانتینرهای دیگر سرور.

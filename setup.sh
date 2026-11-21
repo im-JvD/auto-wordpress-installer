@@ -435,6 +435,46 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
+# Start / Restart Stack Services
+# ------------------------------------------------------------------------------
+start_restart_stack() {
+    echo ""
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+    echo -e "                 ${C_CYAN}START / RESTART STACK SERVICES${C_RESET}"
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+
+    if [[ ! -f .env ]]; then
+        log_error "No .env file found. Stack has not been deployed yet."
+        return 1
+    fi
+
+    log_info "Starting / restarting all containers for this stack..."
+    docker compose up -d
+    log_success "All stack services (Nginx, WordPress, Database, Certbot) are active and running."
+}
+
+# ------------------------------------------------------------------------------
+# Stop Stack Services (Safe Pause)
+# ------------------------------------------------------------------------------
+stop_stack() {
+    echo ""
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+    echo -e "                    ${C_CYAN}STOP STACK SERVICES${C_RESET}"
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+
+    if [[ ! -f .env ]]; then
+        log_error "No .env file found. Stack has not been deployed yet."
+        return 1
+    fi
+
+    log_info "Stopping all containers for this WordPress stack..."
+    docker compose stop
+    log_success "All stack services (Nginx, WordPress, Database, Certbot) have been stopped."
+    echo -e "${C_CYAN}Note: All files, databases, and SSL certificates remain safely stored in Docker volumes.${C_RESET}"
+    echo -e "${C_CYAN}Ports are now temporarily freed.${C_RESET}"
+}
+
+# ------------------------------------------------------------------------------
 # Update Stack Dependencies & Images
 # ------------------------------------------------------------------------------
 update_dependencies() {
@@ -611,15 +651,17 @@ main_menu() {
         echo -e " [${C_BOLD}1${C_RESET}] Deploy Fresh WordPress (Nginx, PHP, WP Core, Isolated DB & SSL)"
         echo -e " [${C_BOLD}2${C_RESET}] Deploy Stack for Migration / Restore (Duplicator & Backupino Ready)"
         echo -e " [${C_BOLD}3${C_RESET}] Create New Database & User (Inside Existing DB Container)"
-        echo -e " [${C_BOLD}4${C_RESET}] Update Dependencies & Container Images"
-        echo -e " [${C_BOLD}5${C_RESET}] Service Status & Health Check"
-        echo -e " [${C_BOLD}6${C_RESET}] View Service Logs (Nginx, PHP, Database, Certbot)"
-        echo -e " [${C_BOLD}7${C_RESET}] Self-Update Script (Pull latest from GitHub)"
-        echo -e " [${C_BOLD}8${C_RESET}] Complete Uninstall (Safe Purge of this Stack Only)"
+        echo -e " [${C_BOLD}4${C_RESET}] Start / Restart Services (Resume or reboot stack)"
+        echo -e " [${C_BOLD}5${C_RESET}] Stop Services (Safely pause stack & release ports)"
+        echo -e " [${C_BOLD}6${C_RESET}] Service Status & Health Check"
+        echo -e " [${C_BOLD}7${C_RESET}] View Service Logs (Nginx, PHP, Database, Certbot)"
+        echo -e " [${C_BOLD}8${C_RESET}] Update Dependencies & Container Images"
+        echo -e " [${C_BOLD}9${C_RESET}] Self-Update Script (Pull latest from GitHub)"
+        echo -e " [${C_BOLD}10${C_RESET}] Complete Uninstall (Safe Purge of this Stack Only)"
         echo -e " [${C_BOLD}0${C_RESET}] Exit"
         echo -e "${C_CYAN}====================================================================${C_RESET}"
         
-        if ! read -r -p "Enter choice [0-8] and press Enter: " user_choice; then
+        if ! read -r -p "Enter choice [0-10] and press Enter: " user_choice; then
             cleanup_and_exit
         fi
 
@@ -637,20 +679,28 @@ main_menu() {
                 read -r -p "Press [Enter] to return to the main menu..." _
                 ;;
             4)
-                update_dependencies
+                start_restart_stack
                 read -r -p "Press [Enter] to return to the main menu..." _
                 ;;
             5)
-                check_status
+                stop_stack
                 read -r -p "Press [Enter] to return to the main menu..." _
                 ;;
             6)
-                view_logs
+                check_status
+                read -r -p "Press [Enter] to return to the main menu..." _
                 ;;
             7)
-                self_update
+                view_logs
                 ;;
             8)
+                update_dependencies
+                read -r -p "Press [Enter] to return to the main menu..." _
+                ;;
+            9)
+                self_update
+                ;;
+            10)
                 uninstall_stack
                 read -r -p "Press [Enter] to return to the main menu..." _
                 ;;
@@ -659,7 +709,7 @@ main_menu() {
                 exit 0
                 ;;
             *)
-                log_warn "Invalid selection. Please choose a number between 0 and 8."
+                log_warn "Invalid selection. Please choose a number between 0 and 10."
                 sleep 1.5
                 ;;
         esac
