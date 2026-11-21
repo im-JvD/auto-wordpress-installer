@@ -6,7 +6,6 @@
 docRoot                   $VH_ROOT/html/
 enableGzip                1
 enableBr                  1
-extAppSetUIDMode          0
 
 index  {
   useServer               0
@@ -38,12 +37,9 @@ rewrite  {
 }
 
 # Certbot ACME Challenge context
-context /.well-known/acme-challenge {
-  location                /var/www/certbot/.well-known/acme-challenge
+context /.well-known/acme-challenge/ {
+  location                /var/www/certbot/.well-known/acme-challenge/
   allowBrowse             1
-  rewrite {
-    enable                0
-  }
 }
 
 # High-Performance PHP INI Overrides (Matches custom.ini)

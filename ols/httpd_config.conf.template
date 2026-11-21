@@ -7,7 +7,7 @@ serverName                ${DOMAIN_NAME}
 user                      nobody
 group                     nogroup
 priority                  0
-inMemCacheSize            120M
+maxConnections            4000
 autoFix503                1
 gracefulRestartTimeout    300
 mime                      conf/mime.properties
@@ -88,7 +88,6 @@ listener HTTPS {
   certChain               1
   sslProtocol             24
   enableQuic              1
-  enableHttp3             1
   map                     Example *
 }
 

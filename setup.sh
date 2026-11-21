@@ -622,6 +622,10 @@ init_ols_container() {
         return 0
     fi
 
+    # Ensure host directories mounted into OLS exist and have correct permissions
+    mkdir -p certbot/www/.well-known/acme-challenge
+    chmod -R 777 certbot/www 2>/dev/null || true
+
     log_info "Initializing OpenLiteSpeed environment and LSAPI PHP worker..."
     docker exec wp_ols sh -c '
         # 1. Create all required runtime directories
@@ -698,7 +702,8 @@ sync_ols_config() {
 
         if [[ -n "$dom" ]]; then
             log_info "Syncing OpenLiteSpeed configurations (Listeners, LSCache, SSL)..."
-            mkdir -p ols/conf/vhosts/Example
+            mkdir -p ols/conf/vhosts/Example certbot/www/.well-known/acme-challenge
+            chmod -R 777 certbot/www 2>/dev/null || true
             sed -e "s/\${DOMAIN_NAME}/${dom}/g" \
                 ols/httpd_config.conf.template > ols/conf/httpd_config.conf
 

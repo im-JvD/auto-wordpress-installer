@@ -9,6 +9,8 @@ certbot/conf/*
 !certbot/conf/.gitkeep
 certbot/www/*
 !certbot/www/.gitkeep
+!certbot/www/.well-known
+!certbot/www/.well-known/**
 
 # Temporary files and logs
 *.log
