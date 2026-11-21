@@ -73,7 +73,7 @@ services:
     volumes:
       - wp_data:/var/www/vhosts/localhost/html
       - ./ols/conf/httpd_config.conf:/usr/local/lsws/conf/httpd_config.conf
-      - ./ols/conf/vhosts/localhost/vhconf.conf:/usr/local/lsws/conf/vhosts/localhost/vhconf.conf
+      - ./ols/conf/vhosts/Example/vhconf.conf:/usr/local/lsws/conf/vhosts/Example/vhconf.conf
       - ./certbot/conf:/etc/letsencrypt:ro
       - ./certbot/www:/var/www/certbot:ro
     environment:

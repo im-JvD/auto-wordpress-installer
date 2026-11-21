@@ -4,8 +4,8 @@
 # ==============================================================================
 
 serverName                ${DOMAIN_NAME}
-user                      www-data
-group                     www-data
+user                      nobody
+group                     nogroup
 priority                  0
 inMemCacheSize            120M
 autoFix503                1
@@ -53,16 +53,16 @@ scriptHandler {
   add                     lsapi:lsphp php
 }
 
-# HTTP Listener on Port ${HTTP_PORT}
+# HTTP Listener on container port 80 (Docker maps host HTTP_PORT here)
 listener Default {
-  address                 *:${HTTP_PORT}
+  address                 *:80
   secure                  0
-  map                     localhost *
+  map                     Example *
 }
 
-# HTTPS Listener on Port ${HTTPS_PORT} (HTTP/2, HTTP/3 & QUIC)
+# HTTPS Listener on container port 443 (Docker maps host HTTPS_PORT here)
 listener HTTPS {
-  address                 *:${HTTPS_PORT}
+  address                 *:443
   secure                  1
   keyFile                 /etc/letsencrypt/live/${DOMAIN_NAME}/privkey.pem
   certFile                /etc/letsencrypt/live/${DOMAIN_NAME}/fullchain.pem
@@ -70,13 +70,13 @@ listener HTTPS {
   sslProtocol             24
   enableQuic              1
   enableHttp3             1
-  map                     localhost *
+  map                     Example *
 }
 
 # Virtual Host Definition
-virtualHost localhost {
+virtualHost Example {
   vhRoot                  /var/www/vhosts/localhost
-  configFile              conf/vhosts/localhost/vhconf.conf
+  configFile              conf/vhosts/Example/vhconf.conf
   allowSymbolLink         1
   enableGzip              1
 }

@@ -30,7 +30,7 @@ local_web_server="${WEB_SERVER:-openlitespeed}"
 echo "[INFO] Initializing SSL setup for domain: ${DOMAIN_NAME}..."
 
 # Step 1: Create directories if not exist
-mkdir -p certbot/conf certbot/www nginx/conf.d ols/conf/vhosts/localhost
+mkdir -p certbot/conf certbot/www nginx/conf.d ols/conf/vhosts/Example
 
 # Step 2: Prepare temporary HTTP challenge config via Nginx
 echo "[INFO] Generating temporary HTTP challenge configuration..."

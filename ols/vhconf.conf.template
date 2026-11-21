@@ -25,7 +25,7 @@ accesslog logs/access.log {
   keepDays                30
 }
 
-# Auto-load WordPress .htaccess
+# Auto-load WordPress .htaccess for permalinks & rewrite rules
 rewrite  {
   enable                  1
   autoLoadHtaccess        1
@@ -35,33 +35,6 @@ rewrite  {
 context /.well-known/acme-challenge {
   location                /var/www/certbot/.well-known/acme-challenge
   allowBrowse             1
-  rewrite {
-    enable                0
-  }
-}
-
-# Allow .well-known for OAuth 2.0 / OpenID Connect / REST API
-context /.well-known/ {
-  location                $VH_ROOT/html/.well-known/
-  allowBrowse             1
-  rewrite {
-    enable                0
-  }
-}
-
-# Protect sensitive hidden files (.env, .git, .htaccess)
-context ~ /\.(?!well-known) {
-  type                    NULL
-  allowBrowse             0
-  rewrite {
-    enable                0
-  }
-}
-
-# Deny direct execution of PHP files in uploads directory
-context ~* /(?:uploads|files)/.*\.php$ {
-  type                    NULL
-  allowBrowse             0
   rewrite {
     enable                0
   }

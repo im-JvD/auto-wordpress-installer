@@ -498,9 +498,12 @@ EOF
 
     # Ensure permissions and extensions
     if [[ "$selected_ws" == "openlitespeed" ]]; then
-        docker exec wp_ols chown -R www-data:www-data /var/www/vhosts/localhost/html 2>/dev/null || true
+        docker exec wp_ols chown -R nobody:nogroup /var/www/vhosts/localhost/html 2>/dev/null || true
+        docker exec wp_ols chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+        ensure_php_extensions
     else
         docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
+        docker exec wp_app chmod -R 775 /var/www/html 2>/dev/null || true
         ensure_php_extensions
     fi
 
@@ -581,6 +584,16 @@ ensure_php_extensions() {
         else
             log_success "Extension pdo_mysql is already active."
         fi
+    elif docker ps --filter "name=wp_ols" --filter "status=running" | grep -q "wp_ols"; then
+        if ! docker exec wp_ols php -m 2>/dev/null | grep -qi "pdo_mysql"; then
+            log_info "Installing pdo_mysql extension in OpenLiteSpeed container..."
+            docker exec wp_ols apt-get update >/dev/null 2>&1 || true
+            docker exec wp_ols apt-get install -y lsphp*-mysql >/dev/null 2>&1 || true
+            docker restart wp_ols >/dev/null 2>&1 || true
+            log_success "Extension pdo_mysql is installed and active in OpenLiteSpeed!"
+        else
+            log_success "Extension pdo_mysql is already active in OpenLiteSpeed."
+        fi
     fi
 }
 
@@ -607,23 +620,15 @@ sync_ols_config() {
     if [[ -f .env ]]; then
         local dom
         dom=$(grep '^DOMAIN_NAME=' .env | cut -d '=' -f2)
-        local http_p
-        http_p=$(grep '^HTTP_PORT=' .env | cut -d '=' -f2 || echo "80")
-        http_p=${http_p:-80}
-        local https_p
-        https_p=$(grep '^HTTPS_PORT=' .env | cut -d '=' -f2 || echo "443")
-        https_p=${https_p:-443}
 
         if [[ -n "$dom" ]]; then
             log_info "Syncing OpenLiteSpeed configurations (Listeners, LSCache, SSL)..."
-            mkdir -p ols/conf/vhosts/localhost
+            mkdir -p ols/conf/vhosts/Example
             sed -e "s/\${DOMAIN_NAME}/${dom}/g" \
-                -e "s/\${HTTP_PORT}/${http_p}/g" \
-                -e "s/\${HTTPS_PORT}/${https_p}/g" \
                 ols/httpd_config.conf.template > ols/conf/httpd_config.conf
 
             sed -e "s/\${DOMAIN_NAME}/${dom}/g" \
-                ols/vhconf.conf.template > ols/conf/vhosts/localhost/vhconf.conf
+                ols/vhconf.conf.template > ols/conf/vhosts/Example/vhconf.conf
 
             if docker ps --filter "name=wp_ols" --filter "status=running" | grep -q "wp_ols"; then
                 docker restart wp_ols >/dev/null 2>&1 || true
@@ -661,10 +666,13 @@ start_restart_stack() {
     docker compose up -d
 
     if [[ "$current_ws" == "openlitespeed" ]]; then
-        docker exec wp_ols chown -R www-data:www-data /var/www/vhosts/localhost/html 2>/dev/null || true
+        docker exec wp_ols chown -R nobody:nogroup /var/www/vhosts/localhost/html 2>/dev/null || true
+        docker exec wp_ols chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+        ensure_php_extensions
     else
         ensure_php_extensions
         docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
+        docker exec wp_app chmod -R 775 /var/www/html 2>/dev/null || true
     fi
 
     log_success "All stack services (Web Server: ${current_ws}, Database, Certbot) are active and running."
@@ -717,11 +725,14 @@ update_dependencies() {
 
     if [[ "$current_ws" == "openlitespeed" ]]; then
         sync_ols_config
-        docker exec wp_ols chown -R www-data:www-data /var/www/vhosts/localhost/html 2>/dev/null || true
+        docker exec wp_ols chown -R nobody:nogroup /var/www/vhosts/localhost/html 2>/dev/null || true
+        docker exec wp_ols chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+        ensure_php_extensions
     else
         sync_nginx_config
         ensure_php_extensions
         docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
+        docker exec wp_app chmod -R 775 /var/www/html 2>/dev/null || true
     fi
 
     log_success "WordPress stack containers have been updated successfully."
@@ -853,7 +864,7 @@ uninstall_stack() {
     docker compose down -v --rmi local 2>/dev/null || docker compose down -v 2>/dev/null || true
 
     log_info "Cleaning configuration and SSL cache..."
-    rm -f .env nginx/conf.d/default.conf ols/conf/httpd_config.conf ols/conf/vhosts/localhost/vhconf.conf "${SCRIPT_DIR}/html"
+    rm -f .env nginx/conf.d/default.conf ols/conf/httpd_config.conf ols/conf/vhosts/Example/vhconf.conf ols/conf/vhosts/localhost/vhconf.conf "${SCRIPT_DIR}/html"
     rm -rf certbot/conf/* certbot/www/*
 
     if [[ -f "/usr/local/bin/wordpress" ]]; then
@@ -1221,12 +1232,18 @@ switch_web_server() {
             echo "COMPOSE_PROFILES=ols" >> .env
         fi
 
+        if ! grep -q '^OLS_IMAGE=' .env; then
+            echo "OLS_IMAGE=litespeedtech/openlitespeed:latest-lsphp83" >> .env
+        fi
+
         log_info "Starting OpenLiteSpeed web server..."
         docker compose up -d openlitespeed
 
         sleep 2
-        # Ensure proper file permissions
-        docker exec wp_ols chown -R www-data:www-data /var/www/vhosts/localhost/html 2>/dev/null || true
+        # Ensure proper file permissions and database extensions
+        docker exec wp_ols chown -R nobody:nogroup /var/www/vhosts/localhost/html 2>/dev/null || true
+        docker exec wp_ols chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+        ensure_php_extensions
     else
         log_info "Stopping OpenLiteSpeed container..."
         docker compose --profile ols stop openlitespeed 2>/dev/null || true
@@ -1247,12 +1264,17 @@ switch_web_server() {
             echo "COMPOSE_PROFILES=nginx" >> .env
         fi
 
+        if ! grep -q '^WP_IMAGE=' .env; then
+            echo "WP_IMAGE=wordpress:php8.3-fpm-alpine" >> .env
+        fi
+
         log_info "Starting Nginx & WordPress PHP-FPM..."
         docker compose up -d wordpress nginx
 
         sleep 2
         ensure_php_extensions
         docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
+        docker exec wp_app chmod -R 775 /var/www/html 2>/dev/null || true
     fi
 
     sleep 2
