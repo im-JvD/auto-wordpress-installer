@@ -209,7 +209,19 @@ verify_dns() {
     log_info "Checking DNS resolution for domain: ${domain}..."
 
     local server_ip=""
-    server_ip=$(curl -s4 --max-time 5 https://ifconfig.me || curl -s4 --max-time 5 https://api.ipify.org || true)
+    for ip_service in \
+        "https://api.ipify.org" \
+        "https://icanhazip.com" \
+        "https://checkip.amazonaws.com" \
+        "https://ipinfo.io/ip" \
+        "https://ifconfig.co"; do
+        local candidate
+        candidate=$(curl -s4 -f --max-time 4 -A "curl/7.88.1" "$ip_service" 2>/dev/null | tr -d '[:space:]' || true)
+        if [[ "$candidate" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+            server_ip="$candidate"
+            break
+        fi
+    done
 
     if [[ -z "$server_ip" ]]; then
         log_warn "Could not determine server public IPv4 address. Skipping strict IP match."
