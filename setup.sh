@@ -405,12 +405,7 @@ EOF
     fi
 
     # Ensure pdo_mysql is enabled for backup and restore tools (Backupino / Duplicator)
-    if ! docker exec wp_app php -m 2>/dev/null | grep -qi "pdo_mysql"; then
-        log_info "Enabling pdo_mysql extension for Backupino / Duplicator compatibility..."
-        docker exec wp_app docker-php-ext-install pdo_mysql >/dev/null 2>&1 || true
-        docker restart wp_app >/dev/null 2>&1 || true
-        log_success "Extension pdo_mysql has been installed and activated."
-    fi
+    ensure_php_extensions
 
     echo ""
     log_info "Waiting for database and WordPress services to stabilize..."
@@ -472,6 +467,23 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
+# Ensure Essential PHP Database Extensions (pdo_mysql for Backupino / Duplicator)
+# ------------------------------------------------------------------------------
+ensure_php_extensions() {
+    log_info "Checking PHP database extensions (pdo_mysql)..."
+    if docker ps --filter "name=wp_app" --filter "status=running" | grep -q "wp_app"; then
+        if ! docker exec wp_app php -m 2>/dev/null | grep -qi "pdo_mysql"; then
+            log_info "Compiling and enabling pdo_mysql extension in container..."
+            docker exec wp_app docker-php-ext-install pdo_mysql >/dev/null 2>&1 || true
+            docker restart wp_app >/dev/null 2>&1 || true
+            log_success "Extension pdo_mysql is now compiled, installed, and active!"
+        else
+            log_success "Extension pdo_mysql is already active."
+        fi
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # Start / Restart Stack Services
 # ------------------------------------------------------------------------------
 start_restart_stack() {
@@ -487,6 +499,7 @@ start_restart_stack() {
 
     log_info "Starting / restarting all containers for this stack..."
     docker compose up -d
+    ensure_php_extensions
     log_success "All stack services (Nginx, WordPress, Database, Certbot) are active and running."
 }
 
@@ -530,6 +543,7 @@ update_dependencies() {
 
     log_info "Recreating containers with updated images..."
     docker compose up -d
+    ensure_php_extensions
 
     log_success "WordPress stack containers have been updated successfully."
 }
