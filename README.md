@@ -133,10 +133,17 @@ wordpress
    * **Database Name:** *(نام انتخابی شما)*
    * **Database User:** *(کاربر انتخابی شما)*
    * **Database Password:** *(رمز عبور انتخابی شما)*
-3. فایل‌های `installer.php` و آرشیو بکاپ (فایل ZIP) را با دستور زیر به داخل کانتینر منتقل کنید:
+3. فایل‌های `installer.php` و آرشیو بکاپ (فایل ZIP) را **مستقیماً داخل پوشه میانبر زیر** قرار دهید:
+   👉 **`/opt/wp-docker/html`** *(این پوشه توسط اسکریپت به صورت خودکار ایجاد شده و در نرم‌افزارهای WinSCP یا FileZilla مستقیماً در دسترس است)*
+
+   همچنین می‌توانید فایل‌ها را در سرور آپلود کرده و با دستور docker منتقل کنید:
    ```bash
    docker cp installer.php wp_app:/var/www/html/
    docker cp your_archive.zip wp_app:/var/www/html/
+   ```
+
+   پس از قرار دادن فایل‌ها، این دستور را در ترمینال بزنید تا مجوزهای دسترسی وردپرس تنظیم شود:
+   ```bash
    docker exec -it wp_app chown -R www-data:www-data /var/www/html
    ```
 4. آدرس زیر را در مرورگر باز کنید:
@@ -165,6 +172,7 @@ wordpress
 ```text
 /opt/wp-docker/
 ├── setup.sh                 # اسکریپت اصلی مدیریت و منوی ترمینال
+├── html/                    # پوشه میانبر مستقیم به فایل‌های سایت (مخصوص آپلود در WinSCP/FileZilla)
 ├── docker-compose.yml       # پیکربندی کانتینرهای داکر
 ├── .env.example             # نمونه متغیرهای محیطی
 ├── php/

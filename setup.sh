@@ -88,6 +88,23 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
+# Create / Verify Direct Access Shortcut for Website Files ('html' folder)
+# ------------------------------------------------------------------------------
+create_html_symlink() {
+    local mount_point=""
+    if command -v docker >/dev/null 2>&1; then
+        mount_point=$(docker volume inspect --format '{{ .Mountpoint }}' wp_data 2>/dev/null || true)
+    fi
+    if [[ -z "$mount_point" ]] || [[ ! -d "$mount_point" ]]; then
+        mount_point="/var/lib/docker/volumes/wp_data/_data"
+    fi
+
+    if [[ -d "$mount_point" ]]; then
+        ln -sfn "$mount_point" "${SCRIPT_DIR}/html" 2>/dev/null || true
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # Read-Only Port Availability & Conflict Check (Supports Cloudflare Alt Ports)
 # ------------------------------------------------------------------------------
 TARGET_HTTP_PORT=80
@@ -372,6 +389,7 @@ EOF
     # Step 11: Launch Full Stack
     log_info "Starting full WordPress & isolated database stack..."
     docker compose up -d
+    create_html_symlink
 
     echo ""
     log_info "Waiting for database and WordPress services to stabilize..."
@@ -417,11 +435,9 @@ EOF
         echo -e " 2. Follow the 5-minute WordPress setup wizard."
     else
         echo -e " ${C_YELLOW}MIGRATION / RESTORATION INSTRUCTIONS (Duplicator / Backupino):${C_RESET}"
-        echo -e " 1. Upload your 'installer.php' and backup archive file to the WordPress web root volume:"
-        echo -e "    Container Path: /var/www/html"
-        echo -e "    Or copy files using docker:"
-        echo -e "    ${C_BOLD}docker cp installer.php wp_app:/var/www/html/${C_RESET}"
-        echo -e "    ${C_BOLD}docker cp archive.zip wp_app:/var/www/html/${C_RESET}"
+        echo -e " 1. Upload 'installer.php' and your backup archive (.zip) directly to:"
+        echo -e "    👉 ${C_GREEN}${C_BOLD}${SCRIPT_DIR}/html${C_RESET} (Direct folder accessible via WinSCP / FileZilla)"
+        echo -e "    Then set proper web permissions with:"
         echo -e "    ${C_BOLD}docker exec -it wp_app chown -R www-data:www-data /var/www/html${C_RESET}"
         if [[ "$TARGET_HTTPS_PORT" -ne 443 ]]; then
             echo -e " 2. In your browser, open: ${C_CYAN}https://${domain_input}:${TARGET_HTTPS_PORT}/installer.php${C_RESET}"
@@ -622,7 +638,7 @@ uninstall_stack() {
     docker compose down -v --rmi local 2>/dev/null || docker compose down -v 2>/dev/null || true
 
     log_info "Cleaning configuration and SSL cache..."
-    rm -f .env nginx/conf.d/default.conf
+    rm -f .env nginx/conf.d/default.conf "${SCRIPT_DIR}/html"
     rm -rf certbot/conf/* certbot/www/*
 
     if [[ -f "/usr/local/bin/wordpress" ]]; then
@@ -639,6 +655,7 @@ uninstall_stack() {
 main_menu() {
     check_root
     install_cli_shortcut
+    create_html_symlink
 
     while true; do
         scroll_to_top
