@@ -57,6 +57,8 @@ extprocessor lsphp {
   respBuffer              0
   autoStart               1
   path                    fcgi-bin/lsphp
+  extUser                 nobody
+  extGroup                nogroup
   backlog                 100
   instances               1
   priority                0
@@ -95,5 +97,8 @@ virtualHost Example {
   vhRoot                  /var/www/vhosts/localhost
   configFile              conf/vhosts/Example/vhconf.conf
   allowSymbolLink         1
+  enableScript            1
+  restrained              0
+  setUIDMode              0
   enableGzip              1
 }

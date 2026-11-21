@@ -503,6 +503,9 @@ EOF
             chmod 777 /tmp/lshttpd
             chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/html 2>/dev/null || true
             chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+            chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
+            chmod 4755 /usr/local/lsws/bin/lscgid 2>/dev/null || true
+            chown root:root /usr/local/lsws/bin/lscgid 2>/dev/null || true
             rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* 2>/dev/null || true
             for bin in /usr/local/lsws/lsphp*/bin/lsphp; do
                 if [ -x "$bin" ]; then
@@ -650,6 +653,9 @@ sync_ols_config() {
                     chmod 777 /tmp/lshttpd
                     chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/html 2>/dev/null || true
                     chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+                    chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
+                    chmod 4755 /usr/local/lsws/bin/lscgid 2>/dev/null || true
+                    chown root:root /usr/local/lsws/bin/lscgid 2>/dev/null || true
                     rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* 2>/dev/null || true
                     for bin in /usr/local/lsws/lsphp*/bin/lsphp; do
                         if [ -x "$bin" ]; then
@@ -735,6 +741,9 @@ start_restart_stack() {
             chmod 777 /tmp/lshttpd
             chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/html 2>/dev/null || true
             chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+            chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
+            chmod 4755 /usr/local/lsws/bin/lscgid 2>/dev/null || true
+            chown root:root /usr/local/lsws/bin/lscgid 2>/dev/null || true
             rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* 2>/dev/null || true
             for bin in /usr/local/lsws/lsphp*/bin/lsphp; do
                 if [ -x "$bin" ]; then
@@ -1336,6 +1345,9 @@ switch_web_server() {
             chmod 777 /tmp/lshttpd
             chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/html 2>/dev/null || true
             chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+            chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
+            chmod 4755 /usr/local/lsws/bin/lscgid 2>/dev/null || true
+            chown root:root /usr/local/lsws/bin/lscgid 2>/dev/null || true
             rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* 2>/dev/null || true
             for bin in /usr/local/lsws/lsphp*/bin/lsphp; do
                 if [ -x "$bin" ]; then
