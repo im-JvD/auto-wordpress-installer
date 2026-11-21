@@ -68,48 +68,83 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
-# Read-Only Port 80 & 443 Conflict Check
+# Read-Only Port Availability & Conflict Check (Supports Cloudflare Alt Ports)
 # ------------------------------------------------------------------------------
+TARGET_HTTP_PORT=80
+TARGET_HTTPS_PORT=443
+
+is_port_in_use() {
+    local port="$1"
+    local busy=""
+    if command -v ss >/dev/null 2>&1; then
+        busy=$(ss -tlpn "sport = :$port" 2>/dev/null | grep -v "State" || true)
+    elif command -v netstat >/dev/null 2>&1; then
+        busy=$(netstat -tlpn 2>/dev/null | grep ":$port " || true)
+    elif command -v lsof >/dev/null 2>&1; then
+        busy=$(lsof -i :"$port" -sTCP:LISTEN 2>/dev/null || true)
+    fi
+
+    if [[ -n "$busy" ]]; then
+        # Check if held by our own wp_nginx container
+        if command -v docker >/dev/null 2>&1; then
+            local is_ours
+            is_ours=$(docker ps --filter "name=wp_nginx" --filter "publish=$port" --format "{{.Names}}" 2>/dev/null || true)
+            if [[ -n "$is_ours" ]]; then
+                return 1
+            fi
+        fi
+        echo "$busy"
+        return 0
+    fi
+    return 1
+}
+
 check_ports() {
     log_info "Performing read-only check for port 80 and 443 availability..."
-    local ports_busy=0
+    TARGET_HTTP_PORT=80
+    TARGET_HTTPS_PORT=443
 
-    for port in 80 443; do
-        local busy_info=""
-        if command -v ss >/dev/null 2>&1; then
-            busy_info=$(ss -tlpn "sport = :$port" 2>/dev/null | grep -v "State" || true)
-        elif command -v netstat >/dev/null 2>&1; then
-            busy_info=$(netstat -tlpn 2>/dev/null | grep ":$port " || true)
-        elif command -v lsof >/dev/null 2>&1; then
-            busy_info=$(lsof -i :"$port" -sTCP:LISTEN 2>/dev/null || true)
-        fi
+    # Check Port 80 (Mandatory for HTTP & Let's Encrypt ACME verification)
+    local p80_busy
+    if p80_busy=$(is_port_in_use 80); then
+        log_error "Port 80 is currently occupied by an existing host process:"
+        echo -e "${C_YELLOW}${p80_busy}${C_RESET}"
+        log_abort "Port 80 is required for HTTP and SSL validation. Please free up port 80 first."
+        return 1
+    fi
+    log_success "Port 80 is available for ACME SSL validation."
 
-        if [[ -n "$busy_info" ]]; then
-            # Check if port is held by our own wp_nginx container
-            local is_ours=""
-            if command -v docker >/dev/null 2>&1; then
-                is_ours=$(docker ps --filter "name=wp_nginx" --filter "publish=$port" --format "{{.Names}}" 2>/dev/null || true)
-            fi
+    # Check Port 443
+    local p443_busy
+    if p443_busy=$(is_port_in_use 443); then
+        log_warn "Port 443 is currently in use by another service on this VPS:"
+        echo -e "${C_YELLOW}${p443_busy}${C_RESET}"
+        echo ""
+        echo -e "${C_CYAN}Notice: You can run WordPress on an alternative HTTPS port (e.g. 8443) compatible with Cloudflare.${C_RESET}"
+        read -r -p "Enter alternative HTTPS port [default: 8443]: " custom_https
+        TARGET_HTTPS_PORT=${custom_https:-8443}
 
-            if [[ -n "$is_ours" ]]; then
+        while true; do
+            if [[ ! "$TARGET_HTTPS_PORT" =~ ^[0-9]+$ ]] || [ "$TARGET_HTTPS_PORT" -lt 1 ] || [ "$TARGET_HTTPS_PORT" -gt 65535 ]; then
+                log_warn "Invalid port number. Please enter a valid port between 1 and 65535."
+                read -r -p "Enter alternative HTTPS port [default: 8443]: " custom_https
+                TARGET_HTTPS_PORT=${custom_https:-8443}
                 continue
             fi
 
-            log_error "Port ${port} is currently in use by an existing host process:"
-            echo -e "${C_YELLOW}${busy_info}${C_RESET}"
-            ports_busy=1
-        fi
-    done
-
-    if [[ "$ports_busy" -eq 1 ]]; then
-        log_abort "Ports 80 and/or 443 are already occupied by another service on this VPS."
-        echo -e "${C_YELLOW}To guarantee safety and prevent interference with existing server applications,${C_RESET}"
-        echo -e "${C_YELLOW}this script will NEVER terminate or modify host services.${C_RESET}"
-        echo -e "Please free up ports 80 and 443 manually, then re-run the deployment."
-        return 1
+            local alt_busy
+            if alt_busy=$(is_port_in_use "$TARGET_HTTPS_PORT"); then
+                log_error "Port $TARGET_HTTPS_PORT is also in use. Please select another port."
+                read -r -p "Enter alternative HTTPS port [default: 8443]: " custom_https
+                TARGET_HTTPS_PORT=${custom_https:-8443}
+            else
+                log_success "Alternative HTTPS Port $TARGET_HTTPS_PORT is available!"
+                break
+            fi
+        done
+    else
+        log_success "Standard HTTPS Port 443 is available."
     fi
-
-    log_success "Ports 80 and 443 are available."
     return 0
 }
 
@@ -283,6 +318,8 @@ deploy_stack() {
 # Auto-generated by setup.sh on $(date -u)
 DOMAIN_NAME=${domain_input}
 CERTBOT_EMAIL=${email_input}
+HTTP_PORT=${TARGET_HTTP_PORT}
+HTTPS_PORT=${TARGET_HTTPS_PORT}
 DB_IMAGE=${db_image}
 DB_NAME=${db_name_input}
 DB_USER=${db_user_input}
@@ -313,7 +350,14 @@ EOF
     echo -e "${C_BOLD}====================================================================${C_RESET}"
     echo -e "  ${C_GREEN}DEPLOYMENT COMPLETED SUCCESSFULLY!${C_RESET}"
     echo -e "${C_BOLD}====================================================================${C_RESET}"
-    echo -e " Website URL:         ${C_CYAN}https://${domain_input}${C_RESET}"
+    if [[ "$TARGET_HTTPS_PORT" -ne 443 ]]; then
+        echo -e " Direct Website URL:  ${C_CYAN}https://${domain_input}:${TARGET_HTTPS_PORT}${C_RESET}"
+        echo -e " Cloudflare URL:      ${C_CYAN}https://${domain_input}${C_RESET}"
+        echo -e " Active HTTPS Port:   ${C_YELLOW}${TARGET_HTTPS_PORT}${C_RESET} (Cloudflare compatible)"
+    else
+        echo -e " Website URL:         ${C_CYAN}https://${domain_input}${C_RESET}"
+        echo -e " Active HTTPS Port:   443 (Standard)"
+    fi
     echo -e " SSL Status:          ${C_GREEN}Active (Let's Encrypt with Auto-Renewal)${C_RESET}"
     echo -e " Database Host:       ${C_BOLD}db${C_RESET} (Internal Docker network only)"
     echo -e " Internal Port:       3306"
@@ -323,9 +367,21 @@ EOF
     echo -e " Database Root Pass:  ${db_root_pass}"
     echo -e "${C_BOLD}====================================================================${C_RESET}"
 
+    if [[ "$TARGET_HTTPS_PORT" -ne 443 ]]; then
+        echo -e " ${C_YELLOW}[!] CLOUDFLARE ORIGIN RULE TIP (Optional but recommended):${C_RESET}"
+        echo -e " In your Cloudflare Dashboard -> Rules -> Origin Rules:"
+        echo -e " Create a rule: When Hostname equals '${domain_input}', rewrite destination port to ${TARGET_HTTPS_PORT}."
+        echo -e " This lets visitors access https://${domain_input} without entering the port in browser!"
+        echo -e "${C_BOLD}====================================================================${C_RESET}"
+    fi
+
     if [[ "$mode" == "fresh" ]]; then
         echo -e " To complete WordPress installation:"
-        echo -e " 1. Open your browser and navigate to: ${C_CYAN}https://${domain_input}${C_RESET}"
+        if [[ "$TARGET_HTTPS_PORT" -ne 443 ]]; then
+            echo -e " 1. Open your browser and navigate to: ${C_CYAN}https://${domain_input}:${TARGET_HTTPS_PORT}${C_RESET} (or ${C_CYAN}https://${domain_input}${C_RESET} via Cloudflare)"
+        else
+            echo -e " 1. Open your browser and navigate to: ${C_CYAN}https://${domain_input}${C_RESET}"
+        fi
         echo -e " 2. Follow the 5-minute WordPress setup wizard."
     else
         echo -e " ${C_YELLOW}MIGRATION / RESTORATION INSTRUCTIONS (Duplicator / Backupino):${C_RESET}"
@@ -335,7 +391,11 @@ EOF
         echo -e "    ${C_BOLD}docker cp installer.php wp_app:/var/www/html/${C_RESET}"
         echo -e "    ${C_BOLD}docker cp archive.zip wp_app:/var/www/html/${C_RESET}"
         echo -e "    ${C_BOLD}docker exec -it wp_app chown -R www-data:www-data /var/www/html${C_RESET}"
-        echo -e " 2. In your browser, open: ${C_CYAN}https://${domain_input}/installer.php${C_RESET}"
+        if [[ "$TARGET_HTTPS_PORT" -ne 443 ]]; then
+            echo -e " 2. In your browser, open: ${C_CYAN}https://${domain_input}:${TARGET_HTTPS_PORT}/installer.php${C_RESET}"
+        else
+            echo -e " 2. In your browser, open: ${C_CYAN}https://${domain_input}/installer.php${C_RESET}"
+        fi
         echo -e " 3. Enter the Database credentials shown above (Host: 'db')."
     fi
     echo -e "${C_BOLD}====================================================================${C_RESET}"
