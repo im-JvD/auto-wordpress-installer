@@ -7,11 +7,21 @@
 set -uo pipefail
 
 # Text formatting & Colors
+readonly SCRIPT_VERSION="v1.0.0"
+
 readonly C_RED='\033[0;31m'
+readonly C_BRIGHT_RED='\033[1;31m'
 readonly C_GREEN='\033[0;32m'
+readonly C_BRIGHT_GREEN='\033[1;32m'
 readonly C_YELLOW='\033[1;33m'
 readonly C_BLUE='\033[0;34m'
+readonly C_BRIGHT_BLUE='\033[1;34m'
+readonly C_MAGENTA='\033[0;35m'
+readonly C_PURPLE='\033[1;35m'
 readonly C_CYAN='\033[0;36m'
+readonly C_BRIGHT_CYAN='\033[1;36m'
+readonly C_ORANGE='\033[38;5;214m'
+readonly C_WHITE='\033[1;37m'
 readonly C_BOLD='\033[1m'
 readonly C_RESET='\033[0m'
 
@@ -22,7 +32,10 @@ cd "${SCRIPT_DIR}"
 # Signal Trap (Clean Exit on Ctrl+C)
 # ------------------------------------------------------------------------------
 cleanup_and_exit() {
-    echo -e "\n\n${C_CYAN}Exiting WordPress Stack Manager. Goodbye!${C_RESET}\n"
+    echo ""
+    echo -e "${C_PURPLE}====================================================================${C_RESET}"
+    echo -e "${C_BRIGHT_GREEN} Good luck... To Open this Menu again, just Type : ${C_YELLOW}wordpress${C_RESET}"
+    echo -e "${C_PURPLE}====================================================================${C_RESET}\n"
     exit 0
 }
 trap cleanup_and_exit SIGINT SIGTERM
@@ -1270,20 +1283,23 @@ database_menu() {
     while true; do
         scroll_to_top
         echo ""
-        echo -e "${C_CYAN}${C_BOLD}"
-        echo "===================================================================="
-        echo "                 DATABASE MANAGEMENT SYSTEM"
-        echo "===================================================================="
-        echo -e "${C_RESET}"
-        echo -e " [${C_BOLD}1${C_RESET}] View Database Credentials & List Active Databases"
-        echo -e " [${C_BOLD}2${C_RESET}] Create New Database & User"
-        echo -e " [${C_BOLD}3${C_RESET}] Delete an Existing Database"
-        echo -e " [${C_BOLD}4${C_RESET}] Start phpMyAdmin (Web GUI on Port 8080)"
-        echo -e " [${C_BOLD}5${C_RESET}] Stop phpMyAdmin (Disable Web GUI & Free RAM)"
-        echo -e " [${C_BOLD}0${C_RESET}] Back to Main Menu"
-        echo -e "${C_CYAN}====================================================================${C_RESET}"
+        echo -e "${C_BRIGHT_CYAN}  https://github.com/im-JvD/auto-wordpress-installer${C_RESET}"
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
+        echo -e "       ${C_BOLD}${C_WHITE}DATABASE MANAGEMENT SYSTEM - [${C_BRIGHT_GREEN}${SCRIPT_VERSION}${C_WHITE}]${C_RESET}"
+        echo -e "       ${C_YELLOW}Isolated MariaDB Database & Web phpMyAdmin Manager${C_RESET}"
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
+        echo ""
+        echo -e "     ${C_BRIGHT_CYAN}1.${C_RESET} ${C_CYAN}View Credentials${C_RESET} & List Active Databases"
+        echo -e "     ${C_BRIGHT_CYAN}2.${C_RESET} ${C_BRIGHT_GREEN}Create New Database${C_RESET} & User"
+        echo -e "     ${C_BRIGHT_CYAN}3.${C_RESET} ${C_BRIGHT_RED}Delete an Existing Database${C_RESET}"
+        echo -e "     ${C_BRIGHT_CYAN}4.${C_RESET} ${C_ORANGE}Start phpMyAdmin${C_RESET} (Web GUI on Port 8080)"
+        echo -e "     ${C_BRIGHT_CYAN}5.${C_RESET} ${C_YELLOW}Stop phpMyAdmin${C_RESET} (Disable Web GUI & Free RAM)"
+        echo ""
+        echo -e "     ${C_BRIGHT_CYAN}0.${C_RESET} ${C_WHITE}Back to Main Menu${C_RESET}"
+        echo ""
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
 
-        if ! read -r -p "Enter choice [0-5] and press Enter: " db_choice; then
+        if ! read -r -p " Select Option [0-5]: " db_choice; then
             break
         fi
 
@@ -1323,17 +1339,20 @@ deploy_menu() {
     while true; do
         scroll_to_top
         echo ""
-        echo -e "${C_CYAN}${C_BOLD}"
-        echo "===================================================================="
-        echo "                    DEPLOYMENT & RESTORATION"
-        echo "===================================================================="
-        echo -e "${C_RESET}"
-        echo -e " [${C_BOLD}1${C_RESET}] Deploy Fresh WordPress (Nginx, PHP, WP Core, Isolated DB, SSL)"
-        echo -e " [${C_BOLD}2${C_RESET}] Deploy Stack for Migration / Restore (Duplicator & Backupino Ready)"
-        echo -e " [${C_BOLD}0${C_RESET}] Back to Main Menu"
-        echo -e "${C_CYAN}====================================================================${C_RESET}"
+        echo -e "${C_BRIGHT_CYAN}  https://github.com/im-JvD/auto-wordpress-installer${C_RESET}"
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
+        echo -e "                 ${C_BOLD}${C_WHITE}DEPLOYMENT & RESTORATION - [${C_BRIGHT_GREEN}${SCRIPT_VERSION}${C_WHITE}]${C_RESET}"
+        echo -e "                 ${C_YELLOW}Install Fresh WordPress or Restore Backup${C_RESET}"
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
+        echo ""
+        echo -e "     ${C_BRIGHT_CYAN}1.${C_RESET} ${C_BRIGHT_GREEN}Deploy Fresh WordPress${C_RESET} (Web Server, PHP, WP Core, DB, SSL)"
+        echo -e "     ${C_BRIGHT_CYAN}2.${C_RESET} ${C_ORANGE}Deploy Stack for Migration${C_RESET} (Duplicator & Backupino Ready)"
+        echo ""
+        echo -e "     ${C_BRIGHT_CYAN}0.${C_RESET} ${C_WHITE}Back to Main Menu${C_RESET}"
+        echo ""
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
 
-        if ! read -r -p "Enter choice [0-2] and press Enter: " dep_choice; then
+        if ! read -r -p " Select Option [0-2]: " dep_choice; then
             break
         fi
 
@@ -1360,24 +1379,24 @@ deploy_menu() {
 service_menu() {
     while true; do
         scroll_to_top
-        local cur_commit
-        cur_commit=$(git rev-parse --short HEAD 2>/dev/null || echo "latest")
         echo ""
-        echo -e "${C_CYAN}${C_BOLD}"
-        echo "===================================================================="
-        echo "           SERVICE CONTROL & MONITORING - [commit: ${cur_commit}]"
-        echo "===================================================================="
-        echo -e "${C_RESET}"
-        echo -e " [${C_BOLD}1${C_RESET}] Start / Restart Stack Services"
-        echo -e " [${C_BOLD}2${C_RESET}] Stop Stack Services (Safe Pause & Free Ports)"
-        echo -e " [${C_BOLD}3${C_RESET}] Service Status & Resource Usage (Stats)"
-        echo -e " [${C_BOLD}4${C_RESET}] View Service Logs (Nginx, PHP, Database, Certbot)"
-        echo -e " [${C_BOLD}5${C_RESET}] Enable / Configure Auto-Start on Boot (systemd service)"
-        echo -e " [${C_BOLD}6${C_RESET}] Self-Update Script (Pull latest from GitHub)"
-        echo -e " [${C_BOLD}0${C_RESET}] Back to Main Menu"
-        echo -e "${C_CYAN}====================================================================${C_RESET}"
+        echo -e "${C_BRIGHT_CYAN}  https://github.com/im-JvD/auto-wordpress-installer${C_RESET}"
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
+        echo -e "           ${C_BOLD}${C_WHITE}SERVICE CONTROL & MONITORING - [${C_BRIGHT_GREEN}${SCRIPT_VERSION}${C_WHITE}]${C_RESET}"
+        echo -e "           ${C_YELLOW}Manage Containers, Health Status & Live Logs${C_RESET}"
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
+        echo ""
+        echo -e "     ${C_BRIGHT_CYAN}1.${C_RESET} ${C_BRIGHT_GREEN}Start / Restart${C_RESET} Stack Services"
+        echo -e "     ${C_BRIGHT_CYAN}2.${C_RESET} ${C_YELLOW}Stop${C_RESET} Stack Services (Safe Pause & Free Ports)"
+        echo -e "     ${C_BRIGHT_CYAN}3.${C_RESET} ${C_CYAN}Service Status${C_RESET} & Resource Usage (Stats)"
+        echo -e "     ${C_BRIGHT_CYAN}4.${C_RESET} ${C_ORANGE}View Service Logs${C_RESET} (Nginx/OLS, PHP, Database, Certbot)"
+        echo -e "     ${C_BRIGHT_CYAN}5.${C_RESET} ${C_WHITE}Enable Auto-Start${C_RESET} on Boot (systemd service)"
+        echo ""
+        echo -e "     ${C_BRIGHT_CYAN}0.${C_RESET} ${C_WHITE}Back to Main Menu${C_RESET}"
+        echo ""
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
 
-        if ! read -r -p "Enter choice [0-6] and press Enter: " srv_choice; then
+        if ! read -r -p " Select Option [0-5]: " srv_choice; then
             break
         fi
 
@@ -1401,15 +1420,12 @@ service_menu() {
                 setup_systemd_service
                 read -r -p "Press [Enter] to return..." _
                 ;;
-            6)
-                self_update
-                ;;
             0)
                 break
                 ;;
             *)
-                log_warn "Invalid selection."
-                sleep 1
+                log_warn "Invalid selection. Please choose between 0 and 5."
+                sleep 1.2
                 ;;
         esac
     done
@@ -1603,19 +1619,22 @@ maintenance_menu() {
     while true; do
         scroll_to_top
         echo ""
-        echo -e "${C_CYAN}${C_BOLD}"
-        echo "===================================================================="
-        echo "                      MAINTENANCE & UPDATES"
-        echo "===================================================================="
-        echo -e "${C_RESET}"
-        echo -e " [${C_BOLD}1${C_RESET}] Switch / Change Web Server (OpenLiteSpeed ⇄ Nginx)"
-        echo -e " [${C_BOLD}2${C_RESET}] Switch / Change PHP Version (7.4, 8.0, 8.1, 8.2, 8.3)"
-        echo -e " [${C_BOLD}3${C_RESET}] Update Container Images & Stack Dependencies"
-        echo -e " [${C_BOLD}4${C_RESET}] Self-Update Script (Pull latest from GitHub)"
-        echo -e " [${C_BOLD}0${C_RESET}] Back to Main Menu"
-        echo -e "${C_CYAN}====================================================================${C_RESET}"
+        echo -e "${C_BRIGHT_CYAN}  https://github.com/im-JvD/auto-wordpress-installer${C_RESET}"
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
+        echo -e "                      ${C_BOLD}${C_WHITE}MAINTENANCE & UPDATES - [${C_BRIGHT_GREEN}${SCRIPT_VERSION}${C_WHITE}]${C_RESET}"
+        echo -e "                 ${C_YELLOW}Web Server Engine, PHP & Core Stack Upgrades${C_RESET}"
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
+        echo ""
+        echo -e "     ${C_BRIGHT_CYAN}1.${C_RESET} ${C_BRIGHT_GREEN}Switch Web Server${C_RESET} (OpenLiteSpeed ⇄ Nginx)"
+        echo -e "     ${C_BRIGHT_CYAN}2.${C_RESET} ${C_CYAN}Switch PHP Version${C_RESET} (7.4, 8.0, 8.1, 8.2, 8.3)"
+        echo -e "     ${C_BRIGHT_CYAN}3.${C_RESET} ${C_ORANGE}Update Container Images${C_RESET} & Stack Dependencies"
+        echo -e "     ${C_BRIGHT_CYAN}4.${C_RESET} ${C_YELLOW}Self-Update Script${C_RESET} (Pull latest from GitHub)"
+        echo ""
+        echo -e "     ${C_BRIGHT_CYAN}0.${C_RESET} ${C_WHITE}Back to Main Menu${C_RESET}"
+        echo ""
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
 
-        if ! read -r -p "Enter choice [0-4] and press Enter: " mnt_choice; then
+        if ! read -r -p " Select Option [0-4]: " mnt_choice; then
             break
         fi
 
@@ -1656,23 +1675,24 @@ main_menu() {
 
     while true; do
         scroll_to_top
-        local cur_commit
-        cur_commit=$(git rev-parse --short HEAD 2>/dev/null || echo "latest")
         echo ""
-        echo -e "${C_CYAN}${C_BOLD}"
-        echo "===================================================================="
-        echo "     WordPress & Docker Stack Manager (Isolated) - [${cur_commit}]"
-        echo "===================================================================="
-        echo -e "${C_RESET}"
-        echo -e " [${C_BOLD}1${C_RESET}] Deployment & Restoration (Fresh WP / Duplicator Restore)"
-        echo -e " [${C_BOLD}2${C_RESET}] Database Management (Create, Delete, View Info, phpMyAdmin)"
-        echo -e " [${C_BOLD}3${C_RESET}] Service Operations (Start, Stop, Restart, Status, Logs)"
-        echo -e " [${C_BOLD}4${C_RESET}] Maintenance & Updates (Update Images, Self-Update Script)"
-        echo -e " [${C_BOLD}5${C_RESET}] Complete Uninstall (Safe Purge Stack Only)"
-        echo -e " [${C_BOLD}0${C_RESET}] Exit"
-        echo -e "${C_CYAN}====================================================================${C_RESET}"
+        echo -e "${C_BRIGHT_CYAN}  https://github.com/im-JvD/auto-wordpress-installer${C_RESET}"
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
+        echo -e "       ${C_BOLD}${C_WHITE}WordPress & Docker Stack Manager (Isolated) - [${C_BRIGHT_GREEN}${SCRIPT_VERSION}${C_WHITE}]${C_RESET}"
+        echo -e "       ${C_YELLOW}Automated, High-Performance & Secure WordPress Stack${C_RESET}"
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
+        echo ""
+        echo -e "     ${C_BRIGHT_CYAN}1.${C_RESET} ${C_BRIGHT_GREEN}Deploy${C_RESET} & ${C_GREEN}Restore${C_RESET} (Fresh WordPress / Migration / Backup)"
+        echo -e "     ${C_BRIGHT_CYAN}2.${C_RESET} ${C_ORANGE}Manage${C_RESET} Database (Create, Delete, Credentials, phpMyAdmin)"
+        echo -e "     ${C_BRIGHT_CYAN}3.${C_RESET} ${C_BRIGHT_BLUE}Service${C_RESET} Control (Start, Stop, Restart, Stats, Live Logs)"
+        echo -e "     ${C_BRIGHT_CYAN}4.${C_RESET} ${C_YELLOW}Maintenance${C_RESET} & Updates (Switch Web Server/PHP, Self-Update)"
+        echo -e "     ${C_BRIGHT_CYAN}5.${C_RESET} ${C_BRIGHT_RED}Uninstall${C_RESET} Stack (Clean, Isolated & Safe Purge)"
+        echo ""
+        echo -e "     ${C_BRIGHT_CYAN}0.${C_RESET} ${C_WHITE}Exit${C_RESET}"
+        echo ""
+        echo -e "${C_PURPLE}====================================================================${C_RESET}"
         
-        if ! read -r -p "Enter choice [0-5] and press Enter: " user_choice; then
+        if ! read -r -p " Select Option [0-5]: " user_choice; then
             cleanup_and_exit
         fi
 
@@ -1686,8 +1706,7 @@ main_menu() {
                 read -r -p "Press [Enter] to return to the main menu..." _
                 ;;
             0)
-                echo "Exiting. Goodbye!"
-                exit 0
+                cleanup_and_exit
                 ;;
             *)
                 log_warn "Invalid selection. Please choose a number between 0 and 5."
