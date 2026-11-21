@@ -361,6 +361,12 @@ deploy_stack() {
     local db_root_pass
     db_root_pass=$(tr -dc 'A-Za-z0-9!#%*+,-./:=?@_' </dev/urandom | head -c 32 || true)
 
+    # Determine Entrypoint: Fresh WP extracts core files; Migration mode runs pure PHP-FPM leaving html completely clean
+    local wp_entrypoint="docker-entrypoint.sh php-fpm"
+    if [[ "$mode" == "migration" ]]; then
+        wp_entrypoint="php-fpm"
+    fi
+
     # Step 9: Save .env securely
     log_info "Writing environment configuration (.env)..."
     cat <<EOF > .env
@@ -375,6 +381,7 @@ DB_USER=${db_user_input}
 DB_PASSWORD=${db_pass_input}
 DB_ROOT_PASSWORD=${db_root_pass}
 WP_TABLE_PREFIX=wp_
+WP_ENTRYPOINT=${wp_entrypoint}
 EOF
     chmod 600 .env
 
@@ -390,6 +397,12 @@ EOF
     log_info "Starting full WordPress & isolated database stack..."
     docker compose up -d
     create_html_symlink
+
+    if [[ "$mode" == "migration" ]]; then
+        log_info "Purging raw WordPress files to ensure a 100% clean directory for Duplicator / Backupino..."
+        docker exec wp_app sh -c 'rm -rf /var/www/html/* /var/www/html/.[!.]* 2>/dev/null || true'
+        log_success "Directory /opt/wp-docker/html is now clean and empty."
+    fi
 
     echo ""
     log_info "Waiting for database and WordPress services to stabilize..."

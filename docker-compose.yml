@@ -23,6 +23,7 @@ services:
     image: wordpress:fpm-alpine
     container_name: wp_app
     restart: unless-stopped
+    entrypoint: ${WP_ENTRYPOINT:-docker-entrypoint.sh php-fpm}
     environment:
       WORDPRESS_DB_HOST: db:3306
       WORDPRESS_DB_USER: ${DB_USER}
