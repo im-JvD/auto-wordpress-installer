@@ -47,7 +47,7 @@ END_rules
 
 # Root Context for Static Assets & WordPress Documents (CSS, JS, Images, Media)
 context / {
-  location                $DOC_ROOT/
+  location                $VH_ROOT/html/
   allowBrowse             1
 
   rewrite  {

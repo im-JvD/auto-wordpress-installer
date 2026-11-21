@@ -612,23 +612,26 @@ ensure_php_extensions() {
     elif docker ps --filter "name=wp_ols" --filter "status=running" | grep -q "wp_ols"; then
         local missing_ols_pkgs=()
         local php_ver_num
-        php_ver_num=$(docker exec wp_ols php -v 2>/dev/null | head -n 1 | grep -oE "PHP [0-9]\.[0-9]" | tr -d ' ' | tr -d '.' | tr '[:upper:]' '[:lower:]' || echo "83")
+        php_ver_num=$(docker exec wp_ols php -r 'echo PHP_MAJOR_VERSION.PHP_MINOR_VERSION;' 2>/dev/null || true)
+        if [[ ! "$php_ver_num" =~ ^[0-9]{2}$ ]]; then
+            php_ver_num="83"
+        fi
         local prefix="lsphp${php_ver_num}"
 
-        for mod in mysql curl zip intl imagick mbstring bcmath; do
+        if ! docker exec wp_ols php -m 2>/dev/null | grep -qi -E "^(mysqli|pdo_mysql)$"; then
+            missing_ols_pkgs+=("${prefix}-mysql")
+        fi
+
+        for mod in curl zip intl imagick mbstring bcmath; do
             if ! docker exec wp_ols php -m 2>/dev/null | grep -qi "^${mod}$"; then
                 missing_ols_pkgs+=("${prefix}-${mod}")
             fi
         done
 
-        if ! docker exec wp_ols php -m 2>/dev/null | grep -qi "pdo_mysql"; then
-            missing_ols_pkgs+=("${prefix}-mysql")
-        fi
-
         if [ ${#missing_ols_pkgs[@]} -gt 0 ]; then
             log_info "Installing missing OpenLiteSpeed PHP extensions (${missing_ols_pkgs[*]})..."
-            docker exec wp_ols apt-get update -y >/dev/null 2>&1 || true
-            docker exec wp_ols apt-get install -y "${missing_ols_pkgs[@]}" >/dev/null 2>&1 || true
+            docker exec wp_ols env DEBIAN_FRONTEND=noninteractive apt-get update -y -q >/dev/null 2>&1 || true
+            docker exec wp_ols env DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o Dpkg::Options::="--force-confold" --no-install-recommends "${missing_ols_pkgs[@]}" >/dev/null 2>&1 || true
             docker exec wp_ols pkill -9 lsphp 2>/dev/null || true
             docker exec wp_ols su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1 || true
             docker exec wp_ols /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 || true
@@ -685,7 +688,9 @@ init_ols_container() {
 
         # 2. Set directory permissions and ownership (Fixes 403 Forbidden for static CSS/JS)
         chown -R nobody:nogroup /var/www/vhosts/localhost/html /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/lscache 2>/dev/null || true
-        chmod -R 777 /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache 2>/dev/null || true
+        find /var/www/vhosts/localhost/html -type d -exec chmod 755 {} + 2>/dev/null || true
+        find /var/www/vhosts/localhost/html -type f -exec chmod 644 {} + 2>/dev/null || true
+        chmod -R 777 /var/www/vhosts/localhost/html/wp-content /var/www/vhosts/localhost/lscache 2>/dev/null || true
         chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
 
         # 3. Locate active PHP binary and create standard symlinks
@@ -882,6 +887,7 @@ start_restart_stack() {
     if [[ "$current_ws" == "openlitespeed" ]]; then
         sync_ols_config
         docker compose up -d --force-recreate openlitespeed
+        init_ols_container
         ensure_php_extensions
         init_ols_container
     else
