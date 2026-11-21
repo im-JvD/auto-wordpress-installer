@@ -404,6 +404,14 @@ EOF
         log_success "Directory /opt/wp-docker/html is now clean and empty."
     fi
 
+    # Ensure pdo_mysql is enabled for backup and restore tools (Backupino / Duplicator)
+    if ! docker exec wp_app php -m 2>/dev/null | grep -qi "pdo_mysql"; then
+        log_info "Enabling pdo_mysql extension for Backupino / Duplicator compatibility..."
+        docker exec wp_app docker-php-ext-install pdo_mysql >/dev/null 2>&1 || true
+        docker restart wp_app >/dev/null 2>&1 || true
+        log_success "Extension pdo_mysql has been installed and activated."
+    fi
+
     echo ""
     log_info "Waiting for database and WordPress services to stabilize..."
     sleep 5
