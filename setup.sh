@@ -652,7 +652,26 @@ init_ols_container() {
             grep -v -i -E "inmemcachesize|enablehttp3" /usr/local/lsws/conf/httpd_config.conf > /tmp/httpd.tmp && cat /tmp/httpd.tmp > /usr/local/lsws/conf/httpd_config.conf && rm -f /tmp/httpd.tmp
         fi
 
-        # 5. Start/Ensure LSPHP is actively listening on 127.0.0.1:9000
+        # 5. Ensure WordPress .htaccess exists in document root
+        if [ ! -f /var/www/vhosts/localhost/html/.htaccess ]; then
+            cat << 'HTACCESS_EOF' > /var/www/vhosts/localhost/html/.htaccess
+# BEGIN WordPress
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+# END WordPress
+HTACCESS_EOF
+            chmod 664 /var/www/vhosts/localhost/html/.htaccess 2>/dev/null || true
+            chown nobody:nogroup /var/www/vhosts/localhost/html/.htaccess 2>/dev/null || true
+        fi
+
+        # 6. Start/Ensure LSPHP is actively listening on 127.0.0.1:9000
         if ! pgrep -f "lsphp -b 127.0.0.1:9000" >/dev/null; then
             pkill -9 lsphp 2>/dev/null || true
             su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1 &

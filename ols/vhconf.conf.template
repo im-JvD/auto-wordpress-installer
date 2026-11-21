@@ -30,10 +30,19 @@ accesslog logs/access.log {
   keepDays                30
 }
 
-# Auto-load WordPress .htaccess for permalinks & rewrite rules
+# WordPress URL Rewrite Rules & Permalinks (Pretty Permalinks, REST API & OAuth)
 rewrite  {
   enable                  1
   autoLoadHtaccess        1
+  rules                   <<<END_rules
+RewriteEngine On
+RewriteBase /
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+END_rules
 }
 
 # Certbot ACME Challenge context
