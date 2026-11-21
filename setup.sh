@@ -647,8 +647,11 @@ init_ols_container() {
             chmod 755 "$PHP_BIN" /usr/local/lsws/fcgi-bin/lsphp 2>/dev/null || true
         fi
 
-        # 4. Remove stale sockets
+        # 4. Remove stale sockets and purge any unsupported directives from mounted configs
         rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* /usr/local/lsws/cgid/*.sock 2>/dev/null || true
+        sed -i "/extappsetuidmode/Id" /usr/local/lsws/conf/vhosts/Example/vhconf.conf 2>/dev/null || true
+        sed -i "/inmemcachesize/Id" /usr/local/lsws/conf/httpd_config.conf 2>/dev/null || true
+        sed -i "/enablehttp3/Id" /usr/local/lsws/conf/httpd_config.conf 2>/dev/null || true
     ' 2>/dev/null || true
 
     # Test configuration syntax
@@ -709,6 +712,10 @@ sync_ols_config() {
 
             sed -e "s/\${DOMAIN_NAME}/${dom}/g" \
                 ols/vhconf.conf.template > ols/conf/vhosts/Example/vhconf.conf
+
+            sed -i '/extAppSetUIDMode/Id' ols/conf/vhosts/Example/vhconf.conf 2>/dev/null || true
+            sed -i '/inMemCacheSize/Id' ols/conf/httpd_config.conf 2>/dev/null || true
+            sed -i '/enableHttp3/Id' ols/conf/httpd_config.conf 2>/dev/null || true
 
             if docker ps --filter "name=wp_ols" --filter "status=running" | grep -q "wp_ols"; then
                 init_ols_container
@@ -1256,10 +1263,12 @@ deploy_menu() {
 service_menu() {
     while true; do
         scroll_to_top
+        local cur_commit
+        cur_commit=$(git rev-parse --short HEAD 2>/dev/null || echo "latest")
         echo ""
         echo -e "${C_CYAN}${C_BOLD}"
         echo "===================================================================="
-        echo "                  SERVICE CONTROL & MONITORING"
+        echo "           SERVICE CONTROL & MONITORING - [commit: ${cur_commit}]"
         echo "===================================================================="
         echo -e "${C_RESET}"
         echo -e " [${C_BOLD}1${C_RESET}] Start / Restart Stack Services"
@@ -1267,10 +1276,11 @@ service_menu() {
         echo -e " [${C_BOLD}3${C_RESET}] Service Status & Resource Usage (Stats)"
         echo -e " [${C_BOLD}4${C_RESET}] View Service Logs (Nginx, PHP, Database, Certbot)"
         echo -e " [${C_BOLD}5${C_RESET}] Enable / Configure Auto-Start on Boot (systemd service)"
+        echo -e " [${C_BOLD}6${C_RESET}] Self-Update Script (Pull latest from GitHub)"
         echo -e " [${C_BOLD}0${C_RESET}] Back to Main Menu"
         echo -e "${C_CYAN}====================================================================${C_RESET}"
 
-        if ! read -r -p "Enter choice [0-5] and press Enter: " srv_choice; then
+        if ! read -r -p "Enter choice [0-6] and press Enter: " srv_choice; then
             break
         fi
 
@@ -1293,6 +1303,9 @@ service_menu() {
             5)
                 setup_systemd_service
                 read -r -p "Press [Enter] to return..." _
+                ;;
+            6)
+                self_update
                 ;;
             0)
                 break
@@ -1545,10 +1558,12 @@ main_menu() {
 
     while true; do
         scroll_to_top
+        local cur_commit
+        cur_commit=$(git rev-parse --short HEAD 2>/dev/null || echo "latest")
         echo ""
         echo -e "${C_CYAN}${C_BOLD}"
         echo "===================================================================="
-        echo "           WordPress & Docker Stack Manager (Isolated)"
+        echo "     WordPress & Docker Stack Manager (Isolated) - [${cur_commit}]"
         echo "===================================================================="
         echo -e "${C_RESET}"
         echo -e " [${C_BOLD}1${C_RESET}] Deployment & Restoration (Fresh WP / Duplicator Restore)"
