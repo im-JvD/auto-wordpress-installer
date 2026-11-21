@@ -55,20 +55,17 @@ phpIniOverride {
   php_admin_value max_input_vars 5000
 }
 
-# Native Server-Level Cache Module (LSCache for WordPress)
+# Native Virtual Host Cache Module (LSCache for WordPress)
 module cache {
   ls_enabled              1
-  check_private_cache     1
-  check_public_cache      1
-  max_cache_object_size   10000000
-  max_stale_age           200
-  qs_cache                1
-  req_cookie_cache        1
-  resp_cookie_cache       1
-  ignore_req_cache_ctrl   1
-  ignore_resp_cache_ctrl  0
-  enable_cache            0
-  expire_in_seconds       3600
-  enable_private_cache    0
-  private_expire_in_seconds 3600
+  storagePath             $VH_ROOT/lscache
+  checkPrivateCache       1
+  checkPublicCache        1
+  maxCacheObjSize         10000000
+  maxStaleAge             200
+  qsCache                 1
+  reqCookieCache          1
+  respCookieCache         1
+  ignoreReqCacheCtrl      1
+  ignoreRespCacheCtrl     0
 }
