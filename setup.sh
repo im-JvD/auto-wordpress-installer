@@ -629,11 +629,11 @@ init_ols_container() {
     log_info "Initializing OpenLiteSpeed environment and LSAPI PHP worker..."
     docker exec wp_ols sh -c '
         # 1. Create all required runtime directories
-        mkdir -p /tmp/lshttpd /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache
+        mkdir -p /tmp/lshttpd /usr/local/lsws/tmp/lshttpd /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache
 
         # 2. Set directory permissions
-        chmod 1777 /tmp /tmp/lshttpd
-        chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/lscache 2>/dev/null || true
+        chmod 1777 /tmp /tmp/lshttpd /usr/local/lsws/tmp/lshttpd
+        chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/tmp/lshttpd /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/lscache 2>/dev/null || true
         chmod -R 777 /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache 2>/dev/null || true
         chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
         chmod 4755 /usr/local/lsws/bin/lscgid 2>/dev/null || true
@@ -647,11 +647,14 @@ init_ols_container() {
             chmod 755 "$PHP_BIN" /usr/local/lsws/fcgi-bin/lsphp 2>/dev/null || true
         fi
 
-        # 4. Remove stale sockets and purge any unsupported directives from mounted configs
-        rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* /usr/local/lsws/cgid/*.sock 2>/dev/null || true
-        sed -i "/extappsetuidmode/Id" /usr/local/lsws/conf/vhosts/Example/vhconf.conf 2>/dev/null || true
-        sed -i "/inmemcachesize/Id" /usr/local/lsws/conf/httpd_config.conf 2>/dev/null || true
-        sed -i "/enablehttp3/Id" /usr/local/lsws/conf/httpd_config.conf 2>/dev/null || true
+        # 4. Remove stale sockets and purge any unsupported directives from mounted configs in-place (without sed -i)
+        rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* /usr/local/lsws/tmp/lshttpd/*.sock /usr/local/lsws/cgid/*.sock 2>/dev/null || true
+        if [ -f /usr/local/lsws/conf/vhosts/Example/vhconf.conf ]; then
+            grep -v -i "extappsetuidmode" /usr/local/lsws/conf/vhosts/Example/vhconf.conf > /tmp/vhconf.tmp && cat /tmp/vhconf.tmp > /usr/local/lsws/conf/vhosts/Example/vhconf.conf && rm -f /tmp/vhconf.tmp
+        fi
+        if [ -f /usr/local/lsws/conf/httpd_config.conf ]; then
+            grep -v -i -E "inmemcachesize|enablehttp3" /usr/local/lsws/conf/httpd_config.conf > /tmp/httpd.tmp && cat /tmp/httpd.tmp > /usr/local/lsws/conf/httpd_config.conf && rm -f /tmp/httpd.tmp
+        fi
     ' 2>/dev/null || true
 
     # Test configuration syntax
@@ -675,6 +678,8 @@ init_ols_container() {
             sleep 1
         fi
         chmod 777 /tmp/lshttpd/lsphp.sock 2>/dev/null || true
+        mkdir -p /usr/local/lsws/tmp/lshttpd 2>/dev/null || true
+        ln -sf /tmp/lshttpd/lsphp.sock /usr/local/lsws/tmp/lshttpd/lsphp.sock 2>/dev/null || true
     ' 2>/dev/null || true
 
     # Probe local web server to verify 200/301 vs 503
@@ -684,10 +689,11 @@ init_ols_container() {
         log_warn "Web server returned 503 during local probe. Activating direct LSAPI daemon fallback..."
         docker exec wp_ols sh -c '
             pkill -9 lsphp 2>/dev/null || true
-            rm -f /tmp/lshttpd/lsphp.sock 2>/dev/null || true
+            rm -f /tmp/lshttpd/*.sock /usr/local/lsws/tmp/lshttpd/*.sock 2>/dev/null || true
             su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b /tmp/lshttpd/lsphp.sock" >/dev/null 2>&1 &
             sleep 2
             chmod 777 /tmp/lshttpd/lsphp.sock 2>/dev/null || true
+            ln -sf /tmp/lshttpd/lsphp.sock /usr/local/lsws/tmp/lshttpd/lsphp.sock 2>/dev/null || true
         ' 2>/dev/null || true
         docker exec wp_ols /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 || true
     elif [[ "$http_code" =~ ^(200|301|302|404)$ ]]; then
@@ -707,15 +713,30 @@ sync_ols_config() {
             log_info "Syncing OpenLiteSpeed configurations (Listeners, LSCache, SSL)..."
             mkdir -p ols/conf/vhosts/Example certbot/www/.well-known/acme-challenge
             chmod -R 777 certbot/www 2>/dev/null || true
-            sed -e "s/\${DOMAIN_NAME}/${dom}/g" \
-                ols/httpd_config.conf.template > ols/conf/httpd_config.conf
+
+            local tmp_httpd tmp_vhconf
+            tmp_httpd=$(mktemp 2>/dev/null || echo "/tmp/httpd_config.tmp")
+            tmp_vhconf=$(mktemp 2>/dev/null || echo "/tmp/vhconf.tmp")
 
             sed -e "s/\${DOMAIN_NAME}/${dom}/g" \
-                ols/vhconf.conf.template > ols/conf/vhosts/Example/vhconf.conf
+                ols/httpd_config.conf.template > "$tmp_httpd"
 
-            sed -i '/extAppSetUIDMode/Id' ols/conf/vhosts/Example/vhconf.conf 2>/dev/null || true
-            sed -i '/inMemCacheSize/Id' ols/conf/httpd_config.conf 2>/dev/null || true
-            sed -i '/enableHttp3/Id' ols/conf/httpd_config.conf 2>/dev/null || true
+            sed -e "s/\${DOMAIN_NAME}/${dom}/g" \
+                ols/vhconf.conf.template > "$tmp_vhconf"
+
+            sed -i '/extAppSetUIDMode/Id' "$tmp_vhconf" 2>/dev/null || true
+            sed -i '/inMemCacheSize/Id' "$tmp_httpd" 2>/dev/null || true
+            sed -i '/enableHttp3/Id' "$tmp_httpd" 2>/dev/null || true
+
+            cat "$tmp_httpd" > ols/conf/httpd_config.conf
+            cat "$tmp_vhconf" > ols/conf/vhosts/Example/vhconf.conf
+            rm -f "$tmp_httpd" "$tmp_vhconf" 2>/dev/null || true
+
+            # Directly sync files into wp_ols container via stdin to bypass any bind-mount inode traps
+            if docker ps -a --filter "name=wp_ols" | grep -q "wp_ols"; then
+                docker exec -i wp_ols sh -c 'cat > /usr/local/lsws/conf/httpd_config.conf' < ols/conf/httpd_config.conf 2>/dev/null || true
+                docker exec -i wp_ols sh -c 'cat > /usr/local/lsws/conf/vhosts/Example/vhconf.conf' < ols/conf/vhosts/Example/vhconf.conf 2>/dev/null || true
+            fi
 
             if docker ps --filter "name=wp_ols" --filter "status=running" | grep -q "wp_ols"; then
                 init_ols_container
@@ -783,16 +804,12 @@ start_restart_stack() {
     log_info "Starting / restarting all active containers (${current_ws} stack)..."
     if [[ "$current_ws" == "openlitespeed" ]]; then
         sync_ols_config
-    else
-        sync_nginx_config
-    fi
-
-    docker compose up -d
-
-    if [[ "$current_ws" == "openlitespeed" ]]; then
+        docker compose up -d --force-recreate openlitespeed
         init_ols_container
         ensure_php_extensions
     else
+        sync_nginx_config
+        docker compose up -d
         ensure_php_extensions
         docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
         docker exec wp_app chmod -R 775 /var/www/html 2>/dev/null || true
@@ -952,6 +969,14 @@ self_update() {
     if git reset --hard "origin/${current_branch}"; then
         chmod +x setup.sh scripts/*.sh 2>/dev/null || true
         log_success "Script successfully updated to latest version."
+
+        if [[ -f .env ]] && grep -q '^WEB_SERVER=openlitespeed' .env; then
+            log_info "Applying updates to active OpenLiteSpeed container..."
+            sync_ols_config
+            docker compose up -d --force-recreate openlitespeed 2>/dev/null || true
+            init_ols_container
+        fi
+
         echo "Reloading script..."
         sleep 1
         exec bash "$0" "$@"
@@ -1380,7 +1405,7 @@ switch_web_server() {
         fi
 
         log_info "Starting OpenLiteSpeed web server..."
-        docker compose up -d openlitespeed
+        docker compose up -d --force-recreate openlitespeed
 
         sleep 2
         init_ols_container
@@ -1471,7 +1496,7 @@ change_php_version() {
         docker compose pull openlitespeed
 
         log_info "Recreating OpenLiteSpeed container with new PHP version..."
-        docker compose up -d openlitespeed
+        docker compose up -d --force-recreate openlitespeed
         sleep 2
         sync_ols_config
         ensure_php_extensions
