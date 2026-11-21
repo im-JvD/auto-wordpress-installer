@@ -47,7 +47,7 @@ module cache {
 # External Application (LiteSpeed PHP - LSAPI)
 extprocessor lsphp {
   type                    lsapi
-  address                 uds://tmp/lshttpd/lsphp.sock
+  address                 127.0.0.1:9000
   maxConns                35
   env                     PHP_LSAPI_CHILDREN=35
   env                     LSAPI_AVOID_FORK=200M
@@ -55,12 +55,10 @@ extprocessor lsphp {
   retryTimeout            0
   persistConn             1
   respBuffer              0
-  autoStart               2
+  autoStart               0
   path                    /usr/local/lsws/fcgi-bin/lsphp
   backlog                 100
   instances               1
-  runOnStartUp            3
-  extMaxIdleTime          10
   priority                0
   memSoftLimit            0
   memHardLimit            0

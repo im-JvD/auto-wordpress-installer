@@ -629,15 +629,12 @@ init_ols_container() {
     log_info "Initializing OpenLiteSpeed environment and LSAPI PHP worker..."
     docker exec wp_ols sh -c '
         # 1. Create all required runtime directories
-        mkdir -p /tmp/lshttpd /usr/local/lsws/tmp/lshttpd /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache
+        mkdir -p /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache
 
         # 2. Set directory permissions
-        chmod 1777 /tmp /tmp/lshttpd /usr/local/lsws/tmp/lshttpd
-        chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/tmp/lshttpd /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/lscache 2>/dev/null || true
+        chown -R nobody:nogroup /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/lscache 2>/dev/null || true
         chmod -R 777 /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache 2>/dev/null || true
         chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
-        chmod 4755 /usr/local/lsws/bin/lscgid 2>/dev/null || true
-        chown root:root /usr/local/lsws/bin/lscgid 2>/dev/null || true
 
         # 3. Locate active PHP binary and create standard symlinks
         PHP_BIN=$(find /usr/local/lsws -name lsphp -type f -perm -111 2>/dev/null | sort -V | tail -n 1)
@@ -647,13 +644,19 @@ init_ols_container() {
             chmod 755 "$PHP_BIN" /usr/local/lsws/fcgi-bin/lsphp 2>/dev/null || true
         fi
 
-        # 4. Remove stale sockets and purge any unsupported directives from mounted configs in-place (without sed -i)
-        rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* /usr/local/lsws/tmp/lshttpd/*.sock /usr/local/lsws/cgid/*.sock 2>/dev/null || true
+        # 4. Purge any unsupported directives from mounted configs in-place
         if [ -f /usr/local/lsws/conf/vhosts/Example/vhconf.conf ]; then
             grep -v -i "extappsetuidmode" /usr/local/lsws/conf/vhosts/Example/vhconf.conf > /tmp/vhconf.tmp && cat /tmp/vhconf.tmp > /usr/local/lsws/conf/vhosts/Example/vhconf.conf && rm -f /tmp/vhconf.tmp
         fi
         if [ -f /usr/local/lsws/conf/httpd_config.conf ]; then
             grep -v -i -E "inmemcachesize|enablehttp3" /usr/local/lsws/conf/httpd_config.conf > /tmp/httpd.tmp && cat /tmp/httpd.tmp > /usr/local/lsws/conf/httpd_config.conf && rm -f /tmp/httpd.tmp
+        fi
+
+        # 5. Start/Ensure LSPHP is actively listening on 127.0.0.1:9000
+        if ! pgrep -f "lsphp -b 127.0.0.1:9000" >/dev/null; then
+            pkill -9 lsphp 2>/dev/null || true
+            su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1 &
+            sleep 1
         fi
     ' 2>/dev/null || true
 
@@ -671,29 +674,23 @@ init_ols_container() {
     docker exec wp_ols /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 || docker restart wp_ols >/dev/null 2>&1 || true
     sleep 3
 
-    # Fail-safe: Ensure LSPHP is actively listening on socket
+    # Fail-safe: Ensure LSPHP daemon is active on 127.0.0.1:9000
     docker exec wp_ols sh -c '
-        if [ ! -S /tmp/lshttpd/lsphp.sock ]; then
-            su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b /tmp/lshttpd/lsphp.sock" >/dev/null 2>&1 &
+        if ! pgrep -f "lsphp" >/dev/null; then
+            su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1 &
             sleep 1
         fi
-        chmod 777 /tmp/lshttpd/lsphp.sock 2>/dev/null || true
-        mkdir -p /usr/local/lsws/tmp/lshttpd 2>/dev/null || true
-        ln -sf /tmp/lshttpd/lsphp.sock /usr/local/lsws/tmp/lshttpd/lsphp.sock 2>/dev/null || true
     ' 2>/dev/null || true
 
     # Probe local web server to verify 200/301 vs 503
     local http_code
     http_code=$(docker exec wp_ols curl -s -o /dev/null -w "%{http_code}" -k https://127.0.0.1:443 2>/dev/null || docker exec wp_ols curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:80 2>/dev/null || echo "000")
     if [[ "$http_code" == "503" ]]; then
-        log_warn "Web server returned 503 during local probe. Activating direct LSAPI daemon fallback..."
+        log_warn "Web server returned 503 during local probe. Restarting LSAPI daemon on 127.0.0.1:9000..."
         docker exec wp_ols sh -c '
             pkill -9 lsphp 2>/dev/null || true
-            rm -f /tmp/lshttpd/*.sock /usr/local/lsws/tmp/lshttpd/*.sock 2>/dev/null || true
-            su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b /tmp/lshttpd/lsphp.sock" >/dev/null 2>&1 &
+            su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1 &
             sleep 2
-            chmod 777 /tmp/lshttpd/lsphp.sock 2>/dev/null || true
-            ln -sf /tmp/lshttpd/lsphp.sock /usr/local/lsws/tmp/lshttpd/lsphp.sock 2>/dev/null || true
         ' 2>/dev/null || true
         docker exec wp_ols /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 || true
     elif [[ "$http_code" =~ ^(200|301|302|404)$ ]]; then
@@ -933,7 +930,14 @@ view_logs() {
         read -r -p "Enter choice [0-5]: " log_choice
 
         case "$log_choice" in
-            1) docker compose logs --tail=100 openlitespeed nginx 2>/dev/null ;;
+            1) 
+                if docker ps --filter "name=wp_ols" --filter "status=running" | grep -q "wp_ols"; then
+                    echo -e "${C_CYAN}--- OpenLiteSpeed Server Error Log (/usr/local/lsws/logs/error.log) ---${C_RESET}"
+                    docker exec wp_ols tail -n 50 /usr/local/lsws/logs/error.log 2>/dev/null || true
+                    echo ""
+                fi
+                docker compose logs --tail=50 openlitespeed nginx 2>/dev/null
+                ;;
             2) docker compose logs --tail=100 wordpress 2>/dev/null ;;
             3) docker compose logs --tail=100 db ;;
             4) docker compose logs --tail=100 certbot ;;
