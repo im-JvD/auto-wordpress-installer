@@ -498,24 +498,8 @@ EOF
 
     # Ensure permissions and extensions
     if [[ "$selected_ws" == "openlitespeed" ]]; then
-        docker exec wp_ols sh -c '
-            mkdir -p /tmp/lshttpd /usr/local/lsws/logs
-            chmod 777 /tmp/lshttpd
-            chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/html 2>/dev/null || true
-            chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
-            chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
-            chmod 4755 /usr/local/lsws/bin/lscgid 2>/dev/null || true
-            chown root:root /usr/local/lsws/bin/lscgid 2>/dev/null || true
-            rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* 2>/dev/null || true
-            for bin in /usr/local/lsws/lsphp*/bin/lsphp; do
-                if [ -x "$bin" ]; then
-                    ln -sf "$bin" /usr/local/lsws/fcgi-bin/lsphp
-                    break
-                fi
-            done
-        ' 2>/dev/null || true
+        init_ols_container
         ensure_php_extensions
-        docker restart wp_ols >/dev/null 2>&1 || true
     else
         docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
         docker exec wp_app chmod -R 775 /var/www/html 2>/dev/null || true
@@ -631,6 +615,80 @@ sync_nginx_config() {
 }
 
 # ------------------------------------------------------------------------------
+# Initialize & Secure OpenLiteSpeed Container Environment
+# ------------------------------------------------------------------------------
+init_ols_container() {
+    if ! docker ps --filter "name=wp_ols" --filter "status=running" | grep -q "wp_ols"; then
+        return 0
+    fi
+
+    log_info "Initializing OpenLiteSpeed environment and LSAPI PHP worker..."
+    docker exec wp_ols sh -c '
+        # 1. Create all required runtime directories
+        mkdir -p /tmp/lshttpd /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache
+
+        # 2. Set directory permissions
+        chmod 1777 /tmp /tmp/lshttpd
+        chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/lscache 2>/dev/null || true
+        chmod -R 777 /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache 2>/dev/null || true
+        chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
+        chmod 4755 /usr/local/lsws/bin/lscgid 2>/dev/null || true
+        chown root:root /usr/local/lsws/bin/lscgid 2>/dev/null || true
+
+        # 3. Locate active PHP binary and create standard symlinks
+        PHP_BIN=$(find /usr/local/lsws -name lsphp -type f -perm -111 2>/dev/null | sort -V | tail -n 1)
+        if [ -n "$PHP_BIN" ] && [ -x "$PHP_BIN" ]; then
+            ln -sf "$PHP_BIN" /usr/local/lsws/fcgi-bin/lsphp
+            ln -sf "$PHP_BIN" /usr/local/bin/php 2>/dev/null || true
+            chmod 755 "$PHP_BIN" /usr/local/lsws/fcgi-bin/lsphp 2>/dev/null || true
+        fi
+
+        # 4. Remove stale sockets
+        rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* /usr/local/lsws/cgid/*.sock 2>/dev/null || true
+    ' 2>/dev/null || true
+
+    # Test configuration syntax
+    log_info "Testing OpenLiteSpeed configuration syntax..."
+    local config_test
+    config_test=$(docker exec wp_ols /usr/local/lsws/bin/openlitespeed -t 2>&1 || true)
+    if echo "$config_test" | grep -qi "error"; then
+        log_warn "OpenLiteSpeed configuration test notice: ${config_test}"
+    else
+        log_success "OpenLiteSpeed configuration syntax test passed."
+    fi
+
+    # Restart OLS to apply clean configuration
+    docker exec wp_ols /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 || docker restart wp_ols >/dev/null 2>&1 || true
+    sleep 3
+
+    # Fail-safe: Ensure LSPHP is actively listening on socket
+    docker exec wp_ols sh -c '
+        if [ ! -S /tmp/lshttpd/lsphp.sock ]; then
+            su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b /tmp/lshttpd/lsphp.sock" >/dev/null 2>&1 &
+            sleep 1
+        fi
+        chmod 777 /tmp/lshttpd/lsphp.sock 2>/dev/null || true
+    ' 2>/dev/null || true
+
+    # Probe local web server to verify 200/301 vs 503
+    local http_code
+    http_code=$(docker exec wp_ols curl -s -o /dev/null -w "%{http_code}" -k https://127.0.0.1:443 2>/dev/null || docker exec wp_ols curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:80 2>/dev/null || echo "000")
+    if [[ "$http_code" == "503" ]]; then
+        log_warn "Web server returned 503 during local probe. Activating direct LSAPI daemon fallback..."
+        docker exec wp_ols sh -c '
+            pkill -9 lsphp 2>/dev/null || true
+            rm -f /tmp/lshttpd/lsphp.sock 2>/dev/null || true
+            su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b /tmp/lshttpd/lsphp.sock" >/dev/null 2>&1 &
+            sleep 2
+            chmod 777 /tmp/lshttpd/lsphp.sock 2>/dev/null || true
+        ' 2>/dev/null || true
+        docker exec wp_ols /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 || true
+    elif [[ "$http_code" =~ ^(200|301|302|404)$ ]]; then
+        log_success "OpenLiteSpeed PHP backend verified healthy (HTTP Status: ${http_code})."
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # Sync & Reload OpenLiteSpeed Configuration from Template
 # ------------------------------------------------------------------------------
 sync_ols_config() {
@@ -648,23 +706,7 @@ sync_ols_config() {
                 ols/vhconf.conf.template > ols/conf/vhosts/Example/vhconf.conf
 
             if docker ps --filter "name=wp_ols" --filter "status=running" | grep -q "wp_ols"; then
-                docker exec wp_ols sh -c '
-                    mkdir -p /tmp/lshttpd /usr/local/lsws/logs
-                    chmod 777 /tmp/lshttpd
-                    chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/html 2>/dev/null || true
-                    chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
-                    chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
-                    chmod 4755 /usr/local/lsws/bin/lscgid 2>/dev/null || true
-                    chown root:root /usr/local/lsws/bin/lscgid 2>/dev/null || true
-                    rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* 2>/dev/null || true
-                    for bin in /usr/local/lsws/lsphp*/bin/lsphp; do
-                        if [ -x "$bin" ]; then
-                            ln -sf "$bin" /usr/local/lsws/fcgi-bin/lsphp
-                            break
-                        fi
-                    done
-                ' 2>/dev/null || true
-                docker restart wp_ols >/dev/null 2>&1 || true
+                init_ols_container
             fi
             log_success "OpenLiteSpeed configuration synchronized successfully."
         fi
@@ -736,24 +778,8 @@ start_restart_stack() {
     docker compose up -d
 
     if [[ "$current_ws" == "openlitespeed" ]]; then
-        docker exec wp_ols sh -c '
-            mkdir -p /tmp/lshttpd /usr/local/lsws/logs
-            chmod 777 /tmp/lshttpd
-            chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/html 2>/dev/null || true
-            chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
-            chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
-            chmod 4755 /usr/local/lsws/bin/lscgid 2>/dev/null || true
-            chown root:root /usr/local/lsws/bin/lscgid 2>/dev/null || true
-            rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* 2>/dev/null || true
-            for bin in /usr/local/lsws/lsphp*/bin/lsphp; do
-                if [ -x "$bin" ]; then
-                    ln -sf "$bin" /usr/local/lsws/fcgi-bin/lsphp
-                    break
-                fi
-            done
-        ' 2>/dev/null || true
+        init_ols_container
         ensure_php_extensions
-        docker restart wp_ols >/dev/null 2>&1 || true
     else
         ensure_php_extensions
         docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
@@ -1339,25 +1365,8 @@ switch_web_server() {
         docker compose up -d openlitespeed
 
         sleep 2
-        # Ensure proper file permissions, socket directory, and database extensions
-        docker exec wp_ols sh -c '
-            mkdir -p /tmp/lshttpd /usr/local/lsws/logs
-            chmod 777 /tmp/lshttpd
-            chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/html 2>/dev/null || true
-            chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
-            chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
-            chmod 4755 /usr/local/lsws/bin/lscgid 2>/dev/null || true
-            chown root:root /usr/local/lsws/bin/lscgid 2>/dev/null || true
-            rm -f /tmp/lshttpd/*.sock /tmp/lshttpd/*.sock.* 2>/dev/null || true
-            for bin in /usr/local/lsws/lsphp*/bin/lsphp; do
-                if [ -x "$bin" ]; then
-                    ln -sf "$bin" /usr/local/lsws/fcgi-bin/lsphp
-                    break
-                fi
-            done
-        ' 2>/dev/null || true
+        init_ols_container
         ensure_php_extensions
-        docker restart wp_ols >/dev/null 2>&1 || true
         setup_systemd_service
     else
         log_info "Stopping OpenLiteSpeed container..."
@@ -1447,6 +1456,7 @@ change_php_version() {
         docker compose up -d openlitespeed
         sleep 2
         sync_ols_config
+        ensure_php_extensions
         local updated_php
         updated_php=$(docker exec wp_ols php -v 2>/dev/null | head -n 1 || echo "Updated")
     else

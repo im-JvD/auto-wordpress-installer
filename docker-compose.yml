@@ -66,6 +66,7 @@ services:
     container_name: wp_ols
     restart: unless-stopped
     profiles: ["ols"]
+    entrypoint: ["/bin/bash", "-c", "mkdir -p /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/lscache && chmod 1777 /tmp /tmp/lshttpd && chown -R nobody:nogroup /tmp/lshttpd /usr/local/lsws/logs /var/www/vhosts/localhost/lscache 2>/dev/null || true && rm -f /tmp/lshttpd/*.sock /usr/local/lsws/cgid/*.sock 2>/dev/null || true && for bin in /usr/local/lsws/lsphp*/bin/lsphp; do [ -x \"$$bin\" ] && ln -sf \"$$bin\" /usr/local/lsws/fcgi-bin/lsphp && ln -sf \"$$bin\" /usr/local/bin/php 2>/dev/null; done && exec /entrypoint.sh"]
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
