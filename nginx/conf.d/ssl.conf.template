@@ -57,11 +57,17 @@ server {
         fastcgi_param PATH_INFO $fastcgi_path_info;
         fastcgi_param HTTPS on;
         fastcgi_param HTTP_X_FORWARDED_PROTO https;
+        fastcgi_param HTTP_AUTHORIZATION $http_authorization;
         fastcgi_read_timeout 600s;
         fastcgi_send_timeout 600s;
         fastcgi_buffer_size 128k;
         fastcgi_buffers 4 256k;
         fastcgi_busy_buffers_size 256k;
+    }
+
+    # Allow .well-known for OAuth, OpenID Connect, and ACME
+    location ^~ /.well-known/ {
+        try_files $uri $uri/ /index.php?$args;
     }
 
     # Deny access to hidden files (.env, .git, .htaccess)

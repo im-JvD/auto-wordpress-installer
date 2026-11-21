@@ -514,6 +514,22 @@ ensure_php_extensions() {
 }
 
 # ------------------------------------------------------------------------------
+# Sync & Reload Nginx Configuration from Template
+# ------------------------------------------------------------------------------
+sync_nginx_config() {
+    if [[ -f .env ]]; then
+        local dom
+        dom=$(grep '^DOMAIN_NAME=' .env | cut -d '=' -f2)
+        if [[ -n "$dom" && -d "certbot/conf/live/${dom}" ]]; then
+            log_info "Syncing latest Nginx SSL & routing configuration..."
+            sed "s/\${DOMAIN_NAME}/${dom}/g" nginx/conf.d/ssl.conf.template > nginx/conf.d/default.conf
+            docker restart wp_nginx >/dev/null 2>&1 || true
+            log_success "Nginx configuration updated and reloaded."
+        fi
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # Start / Restart Stack Services
 # ------------------------------------------------------------------------------
 start_restart_stack() {
@@ -530,6 +546,7 @@ start_restart_stack() {
     log_info "Starting / restarting all containers for this stack..."
     docker compose up -d
     ensure_php_extensions
+    sync_nginx_config
     log_success "All stack services (Nginx, WordPress, Database, Certbot) are active and running."
 }
 
@@ -574,6 +591,7 @@ update_dependencies() {
     log_info "Recreating containers with updated images..."
     docker compose up -d
     ensure_php_extensions
+    sync_nginx_config
 
     log_success "WordPress stack containers have been updated successfully."
 }
