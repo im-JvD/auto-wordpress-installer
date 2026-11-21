@@ -1,66 +1,66 @@
-# Automated & Isolated WordPress Stack Deployer (Docker)
+# استقرار خودکار و ایزوله وردپرس در داکر (WordPress & Docker Stack)
 
-A production-ready, secure, and fully isolated Bash automation script for deploying and managing WordPress on Linux VPS environments using Docker, Nginx, PHP-FPM, and Certbot (Let's Encrypt SSL).
+یک اسکریپت خودکار، امن و کاملاً ایزوله به زبان Bash جهت راه‌اندازی و مدیریت وردپرس روی سرورهای مجازی لینوکس (VPS) با استفاده از **Docker**، **Nginx**، **PHP-FPM** و **Certbot (Let's Encrypt SSL)**.
 
-Designed with **strict isolation principles**:
-- **Zero Port Conflict on Databases:** The database runs inside an isolated internal Docker bridge network. Port `3306` is **never exposed** to the host. Any existing database on your VPS is completely safe and unaffected.
-- **Read-Only Conflict Detection:** Ports `80` and `443` are scanned before deployment. If another service occupies them, the script safely halts with an informative error rather than killing or altering host processes.
-- **Safe & Scoped Management:** All update, log, and uninstall operations strictly target only the containers, volumes, and networks created by this stack. Other Docker containers and host services are untouched.
-- **Duplicator & Backupino Ready:** Includes a dedicated deployment mode specifically tailored for restoring existing WordPress backups without needing to initialize raw WordPress first.
-
----
-
-## Architecture Overview
-
-```
-                      [ Host Ports 80 & 443 ]
-                                 │
-                                 ▼
-                     ┌───────────────────────┐
-                     │   Nginx Reverse Proxy │ (HTTP/2, SSL, Security Headers)
-                     └───────────┬───────────┘
-                                 │
-                 ┌───────────────┴───────────────┐
-                 │                               │
-                 ▼                               ▼
-       ┌───────────────────┐           ┌───────────────────┐
-       │   Certbot (ACME)  │           │ WordPress PHP-FPM │
-       │ (Auto-renew loop) │           │ (wordpress:fpm)   │
-       └───────────────────┘           └─────────┬─────────┘
-                                                 │
-                                                 │ Internal Bridge Network
-                                                 ▼ (Port 3306 - Not Bound to Host)
-                                       ┌───────────────────┐
-                                       │ MariaDB / MySQL   │
-                                       │ (wp_db container) │
-                                       └───────────────────┘
-```
+این پروژه با **اصول سخت‌گیرانه عدم تداخل و امنیت بالا** مهندسی شده است:
+- **عدم تداخل پورت دیتابیس:** کانتینر دیتابیس در شبکه داخلی و ایزوله داکر اجرا می‌شود. پورت `3306` **هرگز روی سرور هاست باز (Expose) نمی‌شود**؛ بنابراین هر دیتابیس دیگری که از قبل روی سرور شما فعال باشد کاملاً امن و دست‌نخورده باقی می‌ماند.
+- **اسکن ایمن و فقط-خواندنی پورت‌ها (Read-Only Check):** پورت‌های `80` و `443` قبل از استقرار بررسی می‌شوند. اگر سرویسی (مانند پنل‌های سرور یا پروکسی) این پورت‌ها را اشغال کرده باشد، اسکریپت هیچ پروسه‌ای را Kill نکرده و با نمایش پیام راهنما، امکان استفاده از پورت‌های جایگزین کلودفلر (مثل `8443`) را فراهم می‌کند.
+- **حذف و مدیریت کاملاً ایزوله:** عملیات‌های آپدیت، مشاهده لاگ و حذف (Uninstall) صرفاً و منحصراً بر روی کانتینرها، ولوم‌ها و شبکه‌های همین پروژه اعمال می‌شود و هیچ تغییری در سایر کانتینرها یا سرویس‌های سرور ایجاد نخواهد کرد.
+- **پشتیبانی ویژه از Duplicator و Backupino:** دارای حالت اختصاصی برای بازگردانی سایت‌های بکاپ‌گیری شده، بدون نیاز به نصب اولیه و خام وردپرس.
 
 ---
 
-## Quick Start (One-Liner Installation)
+## ساختار معماری (Architecture Overview)
 
-Run the following command on your Linux server (Ubuntu/Debian/CentOS/Rocky) to clone and launch the interactive manager:
+```text
+                      [ Host Ports 80 & 443 / 8443 ]
+                                     │
+                                     ▼
+                         ┌───────────────────────┐
+                         │   Nginx Reverse Proxy │ (HTTP/2, SSL, Security Headers)
+                         └───────────┬───────────┘
+                                     │
+                     ┌───────────────┴───────────────┐
+                     │                               │
+                     ▼                               ▼
+           ┌───────────────────┐           ┌───────────────────┐
+           │   Certbot (ACME)  │           │ WordPress PHP-FPM │
+           │ (Auto-renew loop) │           │ (wordpress:fpm)   │
+           └───────────────────┘           └─────────┬─────────┘
+                                                     │
+                                                     │ Internal Bridge Network
+                                                     ▼ (Port 3306 - Not Bound to Host)
+                                           ┌───────────────────┐
+                                           │ MariaDB / MySQL   │
+                                           │ (wp_db container) │
+                                           └───────────────────┘
+```
+
+---
+
+## نصب سریع با دستور تک‌خطی (Quick Start)
+
+کافیست دستور زیر را کپی کرده و در ترمینال سرور مجازی خود (اوبونتو، دبیان، سنت‌او‌اس و...) اجرا کنید:
 
 ```bash
 git clone https://github.com/im-JvD/auto-wordpress-installer.git /opt/wp-docker && cd /opt/wp-docker && chmod +x setup.sh scripts/*.sh && sudo ./setup.sh
 ```
 
-### Global CLI Access (`wordpress` command)
+---
 
-On first run, the script automatically creates a global shortcut `/usr/local/bin/wordpress`. After that, you can simply type:
+### دسترسی سریع با دستور اختصاصی `wordpress`
+
+پس از اولین اجرای اسکریپت، یک دستور سیستمی سراسری به نام `wordpress` در سرور شما ثبت می‌شود. از آن پس، در هر مسیری از سرور که باشید تنها با تایپ کلمه زیر منوی مدیریت برای شما باز می‌شود:
 
 ```bash
 wordpress
 ```
 
-from anywhere in your terminal to open this management menu!
-
 ---
 
-## Interactive Menu Options
+## گزینه‌های منوی مدیریت (Interactive Menu)
 
-When you run `sudo ./setup.sh`, an English numbered menu is presented:
+هنگام اجرای اسکریپت، منوی شماره‌دار به شرح زیر نمایش داده می‌شود:
 
 ```text
 ====================================================================
@@ -78,101 +78,111 @@ When you run `sudo ./setup.sh`, an English numbered menu is presented:
 ====================================================================
 ```
 
-### [1] Deploy Fresh WordPress
-* Performs read-only port checks (80/443).
-* Verifies Docker and Compose plugin (auto-installs from official repo if missing).
-* Prompts for Database Engine choice (MariaDB 10.11 LTS or MySQL 8.0).
-* Prompts for Domain Name, Admin Email, DB Name, User, and Password.
-* Runs DNS pre-flight verification to confirm your domain points to the server IP.
-* Executes two-stage SSL acquisition with Certbot.
-* Launches WordPress and outputs website access URL (`https://yourdomain.com`).
+### [1] راه‌اندازی وردپرس خام (Deploy Fresh WordPress)
+* اسکن ایمن پورت‌های ۸۰ و ۴۴۳.
+* بررسی و نصب خودکار Docker در صورت عدم وجود روی سرور.
+* انتخاب موتور دیتابیس (MariaDB 10.11 LTS یا MySQL 8.0).
+* دریافت نام دامنه، ایمیل ادمین، نام و رمز دیتابیس (با قابلیت ساخت رمز تصادفی و فوق‌العاده قوی).
+* بررسی صحت اتصال DNS دامنه به IP سرور قبل از درخواست گواهی SSL.
+* صدور گواهی SSL معتبر از Let's Encrypt و فعال‌سازی HTTPS.
+* راه‌اندازی هسته خام وردپرس و آماده‌سازی برای ورود به ویزارد نصب.
 
-### [2] Deploy Stack for Migration / Restore (Duplicator & Backupino)
-* Configures Nginx, PHP-FPM, SSL, and an empty database ready for site restoration.
-* Pre-configures PHP upload limits (`upload_max_filesize = 1024M`, `post_max_size = 1024M`, `memory_limit = 512M`, `max_execution_time = 600`) to prevent timeout on large archives.
-* Outputs the exact database credentials and instructions to copy `installer.php` and your archive into the container.
+### [2] راه‌اندازی برای بازگردانی بکاپ (Duplicator & Backupino Ready)
+* راه‌اندازی وب‌سرور، SSL، موتور PHP و ساخت دیتابیس خالی با دسترسی کامل.
+* اعمال تنظیمات ویژه در PHP جهت پشتیبانی از آپلود فایل‌های حجیم (`upload_max_filesize = 1024M`، `post_max_size = 1024M`، `memory_limit = 512M`، `max_execution_time = 600`) تا بازگردانی آرشیوهای سنگین تایم‌اوت نخورد.
+* نمایش دقیق اطلاعات دیتابیس جهت وارد کردن در ویزارد `installer.php`.
 
-### [3] Create New Database & User
-* Connects directly to the running database container.
-* Allows creating additional databases and dedicated users with isolated privileges without touching existing tables.
+### [3] ساخت دیتابیس و کاربر جدید (Create New Database & User)
+* اتصال امن به کانتینر در حال اجرای دیتابیس.
+* امکان تعریف دیتابیس‌ها و کاربران مجزا با دسترسی‌های تفکیک‌شده بدون نیاز به راه‌اندازی مجدد استک.
 
-### [4] Update Dependencies & Container Images
-* Safely pulls updated Docker images for Nginx, WordPress, and the Database.
-* Recreates containers using `docker compose up -d` without data loss.
+### [4] بروزرسانی ایمیج‌ها و وابستگی‌ها (Update Dependencies)
+* دریافت آخرین نسخه‌های پایدار ایمیج‌های داکر (Nginx, WordPress, MariaDB/MySQL).
+* بازسازی مجدد کانتینرها بدون حذف اطلاعات سایت و دیتابیس.
 
-### [5] Service Status & Health Check
-* Shows container uptime, healthcheck states, port mappings, and memory/CPU usage.
-* Tests the live HTTP/HTTPS status code.
+### [5] بررسی وضعیت و سلامت سرویس‌ها (Service Status)
+* مشاهده وضعیت سلامت کانتینرها (Healthcheck)، میزان مصرف پردازنده و رم، و تست زنده پاسخ‌دهی سایت.
 
-### [6] View Service Logs
-* Inspect real-time logs for individual services (Nginx, WordPress, Database, Certbot) or stream all combined logs.
+### [6] مشاهده لاگ‌ها (View Logs)
+* مشاهده لاگ‌های وب‌سرور Nginx، سرویس PHP-FPM، دیتابیس، تمدید خودکار Certbot یا استریم زنده تمامی لاگ‌ها.
 
-### [7] Self-Update Script
-* Fetches and pulls the latest commits from the GitHub repository (`git fetch && git pull`).
-* Updates execution permissions and automatically reloads the script.
+### [7] بروزرسانی خودکار اسکریپت (Self-Update)
+* دریافت آخرین تغییرات و کدهای جدید از مخزن گیت‌هاب با یک کلیک و بارگذاری مجدد برنامه.
 
-### [8] Complete Uninstall
-* Safe, scoped uninstaller requiring explicit `yes` confirmation.
-* Removes **only** the `wp_nginx`, `wp_app`, `wp_db`, and `wp_certbot` containers, volumes (`wp_data`, `wp_db_data`), and network (`wp_network`).
-* Leaves all other host databases, Docker containers, and packages completely intact.
+### [8] حذف کامل و ایمن (Complete Uninstall)
+* حذف با تاییدیه متنی `yes`.
+* متوقف کردن و حذف **فقط و فقط** کانتینرها، ولوم‌ها و شبکه مرتبط با این پروژه.
+* تضمین عدم دستکاری به سایر سرویس‌ها، دیتابیس‌ها یا کانتینرهای دیگر سرور.
 
 ---
 
-## Restoring with Duplicator or Backupino
+## نحوه بازگردانی بکاپ با Duplicator یا Backupino
 
-1. Choose option `[2]` from the menu.
-2. Note down the Database credentials output on screen:
+1. از منوی اسکریپت گزینه `[2]` را انتخاب کنید.
+2. پس از پایان عملیات، مشخصات دیتابیس نمایش داده شده را یادداشت کنید:
    * **Database Host:** `db`
-   * **Database Name:** *(your chosen name)*
-   * **Database User:** *(your chosen user)*
-   * **Database Password:** *(your chosen password)*
-3. Copy your `installer.php` and backup archive to the container web root:
+   * **Database Name:** *(نام انتخابی شما)*
+   * **Database User:** *(کاربر انتخابی شما)*
+   * **Database Password:** *(رمز عبور انتخابی شما)*
+3. فایل‌های `installer.php` و آرشیو بکاپ (فایل ZIP) را با دستور زیر به داخل کانتینر منتقل کنید:
    ```bash
    docker cp installer.php wp_app:/var/www/html/
    docker cp your_archive.zip wp_app:/var/www/html/
    docker exec -it wp_app chown -R www-data:www-data /var/www/html
    ```
-4. In your browser, open:
-   ```
+4. آدرس زیر را در مرورگر باز کنید:
+   ```text
    https://yourdomain.com/installer.php
    ```
-5. Follow the Duplicator / Backupino installer steps using `db` as the host.
+5. مراحل بازگردانی را طی کرده و برای هاست دیتابیس عبارت `db` را وارد نمایید.
 
 ---
 
-## Directory Structure
+## سازگاری با Cloudflare و پورت‌های جایگزین (مانند 8443)
+
+اگر پورت ۴۴۳ سرور شما توسط سرویس دیگری (مانند پنل‌های پروکسی/Xray) اشغال شده باشد:
+1. اسکریپت به صورت خودکار به شما پیشنهاد می‌دهد تا پورت HTTPS وردپرس را روی **`8443`** (که پورت رسمی و پشتیبانی‌شده کلودفلر است) قرار دهید.
+2. برای اینکه بازدیدکنندگان نیازی به نوشتن `:8443` در انتهای آدرس سایت نداشته باشند:
+   * در داشبورد Cloudflare به بخش **Rules** > **Overview** بروید.
+   * کارت **Origin Rules** را باز کرده و یک Rule جدید بسازید.
+   * فیلد **Hostname** را برابر با دامنه خود قرار دهید.
+   * در بخش **Destination Port** گزینه **Rewrite to...** را انتخاب کرده و عدد **`8443`** را وارد کنید.
+   * با این کار، کلودفلر ترافیک‌های ورودی روی پورت استاندارد ۴۴۳ را در پشت صحنه به پورت ۸۴۴۳ سرور شما متصل می‌کند.
+
+---
+
+## ساختار فایل‌های پروژه (Directory Structure)
 
 ```text
 /opt/wp-docker/
-├── setup.sh                 # Master interactive management script
-├── docker-compose.yml       # Production Docker Compose orchestration
-├── .env.example             # Configuration variables blueprint
+├── setup.sh                 # اسکریپت اصلی مدیریت و منوی ترمینال
+├── docker-compose.yml       # پیکربندی کانتینرهای داکر
+├── .env.example             # نمونه متغیرهای محیطی
 ├── php/
-│   └── custom.ini           # Optimized PHP settings for WordPress & Duplicator
+│   └── custom.ini           # کانفیگ بهینه‌شده PHP جهت آپلود فایل‌های سنگین
 ├── nginx/
-│   ├── nginx.conf           # Base Nginx security & performance configuration
+│   ├── nginx.conf           # کانفیگ اصلی Nginx با هدرهای امنیتی
 │   └── conf.d/
-│       ├── http.conf.template # Temporary configuration for ACME HTTP-01 challenge
-│       └── ssl.conf.template  # Production HTTPS configuration with HTTP/2
+│       ├── http.conf.template # کانفیگ موقت جهت تاییدیه Let's Encrypt
+│       └── ssl.conf.template  # کانفیگ نهایی HTTPS با پشتیبانی از HTTP/2
 ├── scripts/
-│   ├── ssl-init.sh          # Two-stage Let's Encrypt SSL certificate bootstrap
-│   └── db-create.sh         # Helper to create isolated databases and users
-└── certbot/                 # Persistent storage for Let's Encrypt certificates
+│   ├── ssl-init.sh          # اسکریپت صدور دو مرحله‌ای SSL
+│   └── db-create.sh         # اسکریپت ایجاد دیتابیس و یوزر جدید
+└── certbot/                 # محل نگهداری گواهی‌های SSL
 ```
 
 ---
 
-## Security Highlights
+## نکات کلیدی امنیت (Security Highlights)
 
-* **No DB Exposure:** Port `3306` is kept inside Docker's internal network.
-* **Modern SSL & HTTP/2:** TLSv1.2 and TLSv1.3 with secure cipher suites and HSTS enabled.
-* **Auto-Renewing SSL:** Dedicated Certbot container continuously monitors and renews certificates before expiration.
-* **File Upload Hardening:** Denies direct execution of PHP scripts in `/wp-content/uploads/`.
-* **Hidden Files Protected:** Blocks access to `.env`, `.git`, `.htaccess`, and other dotfiles.
-* **Non-Destructive Operations:** Never runs global `docker prune` or modifies existing host firewall rules.
+* **ایزولاسیون دیتابیس:** پورت ۳۳۰۶ تنها در شبکه اختصاصی داخلی داکر قابل دسترسی است و ارتباطی با بیرون ندارد.
+* **SSL مدرن با تمدید خودکار:** استفاده از پروتکل‌های ایمن TLSv1.2 و TLSv1.3 به همراه لوپ تمدید خودکار دوره‌ای.
+* **جلوگیری از اجرای بدافزار:** مسدودسازی مستقیم اجرای کدهای PHP در پوشه `/wp-content/uploads/`.
+* **مسدودسازی فایل‌های حساس:** عدم امکان دسترسی خارجی به فایل‌های پنهان مانند `.env` و `.git`.
+* **عملیات بدون تخریب:** عدم اجرای هرگونه دستور خطرناک مانند پاک‌سازی فراگیر داکر یا تغییر در فایروال سرور.
 
 ---
 
-## License
+## لایسنس
 
-MIT License. See [LICENSE](LICENSE) for details.
+این پروژه تحت مجوز **MIT License** منتشر شده است.

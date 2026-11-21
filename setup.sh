@@ -19,6 +19,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
 # ------------------------------------------------------------------------------
+# Signal Trap (Clean Exit on Ctrl+C)
+# ------------------------------------------------------------------------------
+cleanup_and_exit() {
+    echo -e "\n\n${C_CYAN}Exiting WordPress Stack Manager. Goodbye!${C_RESET}\n"
+    exit 0
+}
+trap cleanup_and_exit SIGINT SIGTERM
+
+# ------------------------------------------------------------------------------
+# Terminal Screen Helper (Scroll to top without erasing scrollback history)
+# ------------------------------------------------------------------------------
+scroll_to_top() {
+    if command -v clear >/dev/null 2>&1; then
+        clear -x 2>/dev/null || printf '\033[H'
+    else
+        printf '\033[H'
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # Helper Log Functions
 # ------------------------------------------------------------------------------
 log_info() {
@@ -569,6 +589,7 @@ main_menu() {
     install_cli_shortcut
 
     while true; do
+        scroll_to_top
         echo ""
         echo -e "${C_CYAN}${C_BOLD}"
         echo "===================================================================="
@@ -585,23 +606,49 @@ main_menu() {
         echo -e " [${C_BOLD}8${C_RESET}] Complete Uninstall (Safe Purge of this Stack Only)"
         echo -e " [${C_BOLD}0${C_RESET}] Exit"
         echo -e "${C_CYAN}====================================================================${C_RESET}"
-        read -r -p "Enter choice [0-8] and press Enter: " user_choice
+        
+        if ! read -r -p "Enter choice [0-8] and press Enter: " user_choice; then
+            cleanup_and_exit
+        fi
 
         case "$user_choice" in
-            1) deploy_stack "fresh" ;;
-            2) deploy_stack "migration" ;;
-            3) bash scripts/db-create.sh ;;
-            4) update_dependencies ;;
-            5) check_status ;;
-            6) view_logs ;;
-            7) self_update ;;
-            8) uninstall_stack ;;
+            1)
+                deploy_stack "fresh"
+                read -r -p "Press [Enter] to return to the main menu..." _
+                ;;
+            2)
+                deploy_stack "migration"
+                read -r -p "Press [Enter] to return to the main menu..." _
+                ;;
+            3)
+                bash scripts/db-create.sh
+                read -r -p "Press [Enter] to return to the main menu..." _
+                ;;
+            4)
+                update_dependencies
+                read -r -p "Press [Enter] to return to the main menu..." _
+                ;;
+            5)
+                check_status
+                read -r -p "Press [Enter] to return to the main menu..." _
+                ;;
+            6)
+                view_logs
+                ;;
+            7)
+                self_update
+                ;;
+            8)
+                uninstall_stack
+                read -r -p "Press [Enter] to return to the main menu..." _
+                ;;
             0)
                 echo "Exiting. Goodbye!"
                 exit 0
                 ;;
             *)
                 log_warn "Invalid selection. Please choose a number between 0 and 8."
+                sleep 1.5
                 ;;
         esac
     done
