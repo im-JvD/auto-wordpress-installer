@@ -572,28 +572,56 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
-# Ensure Essential PHP Database Extensions (pdo_mysql for Backupino / Duplicator)
+# Ensure Essential & Recommended PHP Extensions for WordPress, Backupino & WooCommerce
+# (pdo_mysql, mysqli, curl, zip, gd/imagick, mbstring, intl, bcmath, xml, fileinfo)
 # ------------------------------------------------------------------------------
 ensure_php_extensions() {
-    log_info "Checking PHP database extensions (pdo_mysql)..."
+    log_info "Verifying PHP extensions (pdo_mysql, curl, zip, intl, imagick/gd, mbstring, bcmath)..."
     if docker ps --filter "name=wp_app" --filter "status=running" | grep -q "wp_app"; then
-        if ! docker exec wp_app php -m 2>/dev/null | grep -qi "pdo_mysql"; then
-            log_info "Compiling and enabling pdo_mysql extension in container..."
-            docker exec wp_app docker-php-ext-install pdo_mysql >/dev/null 2>&1 || true
+        local missing_exts=()
+        for ext in pdo_mysql intl bcmath exif; do
+            if ! docker exec wp_app php -m 2>/dev/null | grep -qi "^${ext}$"; then
+                missing_exts+=("$ext")
+            fi
+        done
+
+        if [ ${#missing_exts[@]} -gt 0 ]; then
+            log_info "Installing missing PHP extensions in WordPress container (${missing_exts[*]})..."
+            docker exec wp_app apk add --no-cache icu-dev libzip-dev 2>/dev/null || true
+            for ext in "${missing_exts[@]}"; do
+                docker exec wp_app docker-php-ext-install "$ext" >/dev/null 2>&1 || true
+            done
             docker restart wp_app >/dev/null 2>&1 || true
-            log_success "Extension pdo_mysql is now compiled, installed, and active!"
+            log_success "WordPress PHP extensions installed and active: ${missing_exts[*]}"
         else
-            log_success "Extension pdo_mysql is already active."
+            log_success "All required PHP extensions are active in WordPress container."
         fi
     elif docker ps --filter "name=wp_ols" --filter "status=running" | grep -q "wp_ols"; then
+        local missing_ols_pkgs=()
+        local php_ver_num
+        php_ver_num=$(docker exec wp_ols php -v 2>/dev/null | head -n 1 | grep -oE "PHP [0-9]\.[0-9]" | tr -d ' ' | tr -d '.' | tr '[:upper:]' '[:lower:]' || echo "83")
+        local prefix="lsphp${php_ver_num}"
+
+        for mod in mysql curl zip intl imagick mbstring bcmath; do
+            if ! docker exec wp_ols php -m 2>/dev/null | grep -qi "^${mod}$"; then
+                missing_ols_pkgs+=("${prefix}-${mod}")
+            fi
+        done
+
         if ! docker exec wp_ols php -m 2>/dev/null | grep -qi "pdo_mysql"; then
-            log_info "Installing pdo_mysql extension in OpenLiteSpeed container..."
-            docker exec wp_ols apt-get update >/dev/null 2>&1 || true
-            docker exec wp_ols apt-get install -y lsphp*-mysql >/dev/null 2>&1 || true
-            docker restart wp_ols >/dev/null 2>&1 || true
-            log_success "Extension pdo_mysql is installed and active in OpenLiteSpeed!"
+            missing_ols_pkgs+=("${prefix}-mysql")
+        fi
+
+        if [ ${#missing_ols_pkgs[@]} -gt 0 ]; then
+            log_info "Installing missing OpenLiteSpeed PHP extensions (${missing_ols_pkgs[*]})..."
+            docker exec wp_ols apt-get update -y >/dev/null 2>&1 || true
+            docker exec wp_ols apt-get install -y "${missing_ols_pkgs[@]}" >/dev/null 2>&1 || true
+            docker exec wp_ols pkill -9 lsphp 2>/dev/null || true
+            docker exec wp_ols /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 || true
+            sleep 2
+            log_success "OpenLiteSpeed PHP extensions installed and active: ${missing_ols_pkgs[*]}"
         else
-            log_success "Extension pdo_mysql is already active in OpenLiteSpeed."
+            log_success "All required PHP extensions (pdo_mysql, zip, curl, intl, mbstring, gd) are active in OpenLiteSpeed."
         fi
     fi
 }
@@ -879,7 +907,7 @@ update_dependencies() {
     docker compose pull
 
     log_info "Recreating containers with updated images..."
-    docker compose up -d
+    docker compose up -d --force-recreate
 
     if [[ "$current_ws" == "openlitespeed" ]]; then
         sync_ols_config
