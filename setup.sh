@@ -279,6 +279,30 @@ verify_dns() {
 }
 
 # ------------------------------------------------------------------------------
+# PHP Version Selector Helper (7.4 to 8.3)
+# ------------------------------------------------------------------------------
+select_php_version() {
+    local default_sel="${1:-5}"
+    echo "" >&2
+    echo "Select PHP Version for WordPress:" >&2
+    echo "  1) PHP 7.4 (Legacy support)" >&2
+    echo "  2) PHP 8.0" >&2
+    echo "  3) PHP 8.1" >&2
+    echo "  4) PHP 8.2 (Stable & High Performance)" >&2
+    echo "  5) PHP 8.3 (Recommended)" >&2
+    read -r -p "Enter choice [1-5, default: ${default_sel}]: " user_php_sel
+    user_php_sel=${user_php_sel:-$default_sel}
+
+    case "$user_php_sel" in
+        1) echo "wordpress:php7.4-fpm-alpine" ;;
+        2) echo "wordpress:php8.0-fpm-alpine" ;;
+        3) echo "wordpress:php8.1-fpm-alpine" ;;
+        4) echo "wordpress:php8.2-fpm-alpine" ;;
+        5|*) echo "wordpress:php8.3-fpm-alpine" ;;
+    esac
+}
+
+# ------------------------------------------------------------------------------
 # Core Deployment (Mode 1: Fresh WordPress / Mode 2: Duplicator/Backupino Ready)
 # ------------------------------------------------------------------------------
 deploy_stack() {
@@ -308,6 +332,11 @@ deploy_stack() {
         db_image="mysql:8.0"
     fi
     log_info "Selected database engine: ${db_image}"
+
+    # Step 2.5: Select PHP Version (7.4 to 8.3)
+    local wp_image
+    wp_image=$(select_php_version 5)
+    log_info "Selected PHP Image: ${wp_image}"
 
     # Step 3: Domain Name
     echo ""
@@ -382,6 +411,7 @@ DB_PASSWORD=${db_pass_input}
 DB_ROOT_PASSWORD=${db_root_pass}
 WP_TABLE_PREFIX=wp_
 WP_ENTRYPOINT=${wp_entrypoint}
+WP_IMAGE=${wp_image}
 EOF
     chmod 600 .env
 
@@ -985,6 +1015,53 @@ service_menu() {
     done
 }
 
+# ------------------------------------------------------------------------------
+# PHP Version Management Functions (7.4 to 8.3)
+# ------------------------------------------------------------------------------
+change_php_version() {
+    echo ""
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+    echo -e "                   ${C_CYAN}SWITCH PHP VERSION${C_RESET}"
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+
+    if [[ ! -f .env ]]; then
+        log_error "No .env file found. Stack has not been deployed yet."
+        return 1
+    fi
+
+    local current_php="Unknown"
+    if docker ps --filter "name=wp_app" --filter "status=running" | grep -q "wp_app"; then
+        current_php=$(docker exec wp_app php -v 2>/dev/null | head -n 1 || echo "Unknown")
+    fi
+    echo -e " Current Active PHP: ${C_GREEN}${current_php}${C_RESET}"
+
+    local new_image
+    new_image=$(select_php_version 5)
+
+    log_info "Updating PHP version to ${new_image} in .env..."
+    if grep -q '^WP_IMAGE=' .env; then
+        sed -i "s|^WP_IMAGE=.*|WP_IMAGE=${new_image}|" .env
+    else
+        echo "WP_IMAGE=${new_image}" >> .env
+    fi
+
+    log_info "Pulling new PHP container image (${new_image})..."
+    docker compose pull wordpress
+
+    log_info "Recreating WordPress container with new PHP version..."
+    docker compose up -d wordpress
+    sleep 2
+
+    ensure_php_extensions
+    docker restart wp_nginx >/dev/null 2>&1 || true
+
+    local updated_php
+    updated_php=$(docker exec wp_app php -v 2>/dev/null | head -n 1 || echo "Updated")
+    echo ""
+    log_success "Successfully switched PHP version!"
+    echo -e " Active PHP Version: ${C_GREEN}${updated_php}${C_RESET}"
+}
+
 maintenance_menu() {
     while true; do
         scroll_to_top
@@ -994,29 +1071,34 @@ maintenance_menu() {
         echo "                      MAINTENANCE & UPDATES"
         echo "===================================================================="
         echo -e "${C_RESET}"
-        echo -e " [${C_BOLD}1${C_RESET}] Update Container Images & Stack Dependencies"
-        echo -e " [${C_BOLD}2${C_RESET}] Self-Update Script (Pull latest from GitHub)"
+        echo -e " [${C_BOLD}1${C_RESET}] Switch / Change PHP Version (7.4, 8.0, 8.1, 8.2, 8.3)"
+        echo -e " [${C_BOLD}2${C_RESET}] Update Container Images & Stack Dependencies"
+        echo -e " [${C_BOLD}3${C_RESET}] Self-Update Script (Pull latest from GitHub)"
         echo -e " [${C_BOLD}0${C_RESET}] Back to Main Menu"
         echo -e "${C_CYAN}====================================================================${C_RESET}"
 
-        if ! read -r -p "Enter choice [0-2] and press Enter: " mnt_choice; then
+        if ! read -r -p "Enter choice [0-3] and press Enter: " mnt_choice; then
             break
         fi
 
         case "$mnt_choice" in
             1)
-                update_dependencies
+                change_php_version
                 read -r -p "Press [Enter] to return..." _
                 ;;
             2)
+                update_dependencies
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            3)
                 self_update
                 ;;
             0)
                 break
                 ;;
             *)
-                log_warn "Invalid selection."
-                sleep 1
+                log_warn "Invalid selection. Please choose between 0 and 3."
+                sleep 1.2
                 ;;
         esac
     done
