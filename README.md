@@ -58,67 +58,48 @@ wordpress
 
 ---
 
-## گزینه‌های منوی مدیریت (Interactive Menu)
+## ساختار منوی اصلی (Categorized Main Menu)
 
-هنگام اجرای اسکریپت، منوی شماره‌دار به شرح زیر نمایش داده می‌شود:
+برای سهولت در کاربری و جلوگیری از شلوغی، گزینه‌های اسکریپت در ۵ دسته اصلی سازماندهی شده‌اند:
 
 ```text
 ====================================================================
            WordPress & Docker Stack Manager (Isolated)
 ====================================================================
- [1] Deploy Fresh WordPress (Nginx, PHP, WP Core, Isolated DB & SSL)
- [2] Deploy Stack for Migration / Restore (Duplicator & Backupino Ready)
- [3] Create New Database & User (Inside Existing DB Container)
- [4] Start / Restart Services (Resume or reboot stack)
- [5] Stop Services (Safely pause stack & release ports)
- [6] Service Status & Health Check
- [7] View Service Logs (Nginx, PHP, Database, Certbot)
- [8] Update Dependencies & Container Images
- [9] Self-Update Script (Pull latest from GitHub)
- [10] Complete Uninstall (Safe Purge of this Stack Only)
+ [1] Deployment & Restoration (Fresh WP / Duplicator Restore)
+ [2] Database Management (Create, Delete, View Info, phpMyAdmin)
+ [3] Service Operations (Start, Stop, Restart, Status, Logs)
+ [4] Maintenance & Updates (Update Images, Self-Update Script)
+ [5] Complete Uninstall (Safe Purge Stack Only)
  [0] Exit
 ====================================================================
 ```
 
-### [1] راه‌اندازی وردپرس خام (Deploy Fresh WordPress)
-* اسکن ایمن پورت‌های ۸۰ و ۴۴۳.
-* بررسی و نصب خودکار Docker در صورت عدم وجود روی سرور.
-* انتخاب موتور دیتابیس (MariaDB 10.11 LTS یا MySQL 8.0).
-* دریافت نام دامنه، ایمیل ادمین، نام و رمز دیتابیس (با قابلیت ساخت رمز تصادفی و فوق‌العاده قوی).
-* بررسی صحت اتصال DNS دامنه به IP سرور قبل از درخواست گواهی SSL.
-* صدور گواهی SSL معتبر از Let's Encrypt و فعال‌سازی HTTPS.
-* راه‌اندازی هسته خام وردپرس و آماده‌سازی برای ورود به ویزارد نصب.
+---
 
-### [2] راه‌اندازی برای بازگردانی بکاپ (Duplicator & Backupino Ready)
-* راه‌اندازی وب‌سرور، SSL، موتور PHP و ساخت دیتابیس خالی با دسترسی کامل.
-* اعمال تنظیمات ویژه در PHP جهت پشتیبانی از آپلود فایل‌های حجیم (`upload_max_filesize = 1024M`، `post_max_size = 1024M`، `memory_limit = 512M`، `max_execution_time = 600`) تا بازگردانی آرشیوهای سنگین تایم‌اوت نخورد.
-* نمایش دقیق اطلاعات دیتابیس جهت وارد کردن در ویزارد `installer.php`.
+### [1] استقرار و بازگردانی (Deployment & Restoration)
+* **Deploy Fresh WordPress:** راه‌اندازی صفر تا صد وردپرس خام با Nginx، PHP-FPM، دیتابیس ایزوله، سرتیفیکیت SSL و شبکه اختصاصی.
+* **Deploy Stack for Migration / Restore:** آماده‌سازی تمام زیرساخت‌ها با مقادیر بهینه‌شده برای فایل‌های حجیم و پوشه وب آماده برای ریستور توسط Duplicator یا Backupino.
 
-### [3] ساخت دیتابیس و کاربر جدید (Create New Database & User)
-* اتصال امن به کانتینر در حال اجرای دیتابیس.
-* امکان تعریف دیتابیس‌ها و کاربران مجزا با دسترسی‌های تفکیک‌شده بدون نیاز به راه‌اندازی مجدد استک.
+### [2] مدیریت پیشرفته دیتابیس‌ها (Database Management)
+یک زیرمنوی جامع برای مدیریت کامل پایگاه‌های داده درون داکر:
+* **مشاهده مشخصات و لیست دیتابیس‌ها:** نمایش هاست (`db`)، یوزر، رمز عبور اصلی و روت، به همراه فهرست تمامی دیتابیس‌های فعال.
+* **ایجاد دیتابیس و کاربر جدید:** ساخت آسان دیتابیس‌های اضافی با دسترسی‌های تفکیک‌شده.
+* **حذف ایمن دیتابیس:** امکان حذف دیتابیس‌های غیرضروری با تاییدیه دو مرحله‌ای (با محافظت سخت‌گیرانه از دیتابیس‌های سیستمی).
+* **اجرای phpMyAdmin تحت وب:** راه‌اندازی یک کلیک و در صورت نیاز (On-Demand) پنل گرافیکی phpMyAdmin روی پورت دلخواه (پیش‌فرض ۸۰۸۰).
+* **توقف phpMyAdmin:** غیرفعال‌سازی و بستن آنی phpMyAdmin جهت حفظ کامل امنیت و آزادسازی حافظه رم سرور.
 
-### [4] روشن کردن یا راه‌اندازی مجدد (Start / Restart Services)
-* اجرای مجدد یا ری‌استارت تمام کانتینرهای استک (Nginx, WordPress, Database, Certbot).
+### [3] عملیات و پایش سرویس‌ها (Service Operations)
+* **Start / Restart Services:** اجرای مجدد یا ری‌استارت تمام کانتینرهای استک (Nginx, WordPress, Database, Certbot).
+* **Stop Services:** متوقف کردن امن تمام کانتینرها بدون حذف دیتابیس یا فایل‌ها (آزادسازی فوری پورت‌ها و منابع پردازنده و رم).
+* **Service Status & Stats:** مشاهده وضعیت سلامت کانتینرها (Healthcheck)، میزان مصرف پردازنده و رم، و تست زنده پاسخ‌دهی سایت.
+* **View Service Logs:** مشاهده لاگ‌های اختصاصی وب‌سرور Nginx، سرویس PHP-FPM، دیتابیس، تمدید خودکار Certbot یا استریم زنده تمامی لاگ‌ها.
 
-### [5] توقف کامل استک (Stop Services)
-* متوقف کردن امن تمام کانتینرها بدون حذف دیتابیس یا فایل‌ها.
-* آزاد شدن آنی پورت‌ها و منابع پردازنده و رم سرور.
+### [4] نگهداری و بروزرسانی‌ها (Maintenance & Updates)
+* **Update Container Images:** دریافت آخرین نسخه‌های پایدار ایمیج‌های داکر و بازسازی مجدد کانتینرها بدون از دست رفتن اطلاعات.
+* **Self-Update Script:** همگام‌سازی و بروزرسانی مستقیم و هوشمند اسکریپت از مخزن رسمی گیت‌هاب با یک کلیک.
 
-### [6] بررسی وضعیت و سلامت سرویس‌ها (Service Status)
-* مشاهده وضعیت سلامت کانتینرها (Healthcheck)، میزان مصرف پردازنده و رم، و تست زنده پاسخ‌دهی سایت.
-
-### [7] مشاهده لاگ‌ها (View Logs)
-* مشاهده لاگ‌های وب‌سرور Nginx، سرویس PHP-FPM، دیتابیس، تمدید خودکار Certbot یا استریم زنده تمامی لاگ‌ها.
-
-### [8] بروزرسانی ایمیج‌ها و وابستگی‌ها (Update Dependencies)
-* دریافت آخرین نسخه‌های پایدار ایمیج‌های داکر (Nginx, WordPress, MariaDB/MySQL).
-* بازسازی مجدد کانتینرها بدون حذف اطلاعات سایت و دیتابیس.
-
-### [9] بروزرسانی خودکار اسکریپت (Self-Update)
-* دریافت آخرین تغییرات و کدهای جدید از مخزن گیت‌هاب با یک کلیک و بارگذاری مجدد برنامه.
-
-### [10] حذف کامل و ایمن (Complete Uninstall)
+### [5] حذف کامل و ایمن (Complete Uninstall)
 * حذف با تاییدیه متنی `yes`.
 * متوقف کردن و حذف **فقط و فقط** کانتینرها، ولوم‌ها و شبکه مرتبط با این پروژه.
 * تضمین عدم دستکاری به سایر سرویس‌ها، دیتابیس‌ها یا کانتینرهای دیگر سرور.

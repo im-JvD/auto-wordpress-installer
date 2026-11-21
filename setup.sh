@@ -635,6 +635,7 @@ uninstall_stack() {
     fi
 
     log_info "Stopping and removing stack containers and volumes..."
+    docker rm -f wp_pma 2>/dev/null || true
     docker compose down -v --rmi local 2>/dev/null || docker compose down -v 2>/dev/null || true
 
     log_info "Cleaning configuration and SSL cache..."
@@ -647,6 +648,343 @@ uninstall_stack() {
     fi
 
     log_success "WordPress stack has been completely and safely removed."
+}
+
+# ------------------------------------------------------------------------------
+# Database Management Subsystem (View, Create, Delete, phpMyAdmin)
+# ------------------------------------------------------------------------------
+db_view_info() {
+    echo ""
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+    echo -e "              ${C_CYAN}DATABASE CREDENTIALS & ACTIVE DATABASES${C_RESET}"
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+
+    if [[ ! -f .env ]]; then
+        log_error "No .env file found. Stack has not been deployed yet."
+        return 1
+    fi
+
+    # shellcheck disable=SC1091
+    source .env
+
+    echo -e " Database Host:      ${C_BOLD}db${C_RESET} (Internal Docker network only)"
+    echo -e " Internal Port:      3306"
+    echo -e " Primary DB Name:    ${C_GREEN}${DB_NAME:-N/A}${C_RESET}"
+    echo -e " Primary DB User:    ${C_GREEN}${DB_USER:-N/A}${C_RESET}"
+    echo -e " Primary DB Pass:    ${C_YELLOW}${DB_PASSWORD:-N/A}${C_RESET}"
+    echo -e " Root Password:      ${C_YELLOW}${DB_ROOT_PASSWORD:-N/A}${C_RESET}"
+    echo -e "${C_BOLD}--------------------------------------------------------------------${C_RESET}"
+
+    if docker ps --filter "name=wp_db" --filter "status=running" | grep -q "wp_db"; then
+        echo -e "${C_BOLD}[Active Databases]:${C_RESET}"
+        docker exec -i wp_db mysql -u root -p"${DB_ROOT_PASSWORD}" -e "SHOW DATABASES;" 2>/dev/null || echo "Could not query databases."
+    else
+        log_warn "Database container (wp_db) is currently stopped."
+    fi
+}
+
+db_delete() {
+    echo ""
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+    echo -e "                    ${C_RED}DELETE AN EXISTING DATABASE${C_RESET}"
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+
+    if [[ ! -f .env ]]; then
+        log_error "No .env file found. Stack has not been deployed yet."
+        return 1
+    fi
+
+    # shellcheck disable=SC1091
+    source .env
+
+    if ! docker ps --filter "name=wp_db" --filter "status=running" | grep -q "wp_db"; then
+        log_error "Database container (wp_db) is not currently running."
+        return 1
+    fi
+
+    echo -e "${C_BOLD}[Existing Databases]:${C_RESET}"
+    docker exec -i wp_db mysql -u root -p"${DB_ROOT_PASSWORD}" -e "SHOW DATABASES;" 2>/dev/null
+    echo ""
+
+    read -r -p "Enter Database name to DELETE: " target_db
+    target_db=$(echo "$target_db" | tr -d ' ')
+
+    if [[ -z "$target_db" ]]; then
+        log_warn "No database specified. Operation cancelled."
+        return 0
+    fi
+
+    # Protect system databases
+    case "$target_db" in
+        information_schema|mysql|performance_schema|sys)
+            log_error "Deleting system database '$target_db' is strictly forbidden!"
+            return 1
+            ;;
+    esac
+
+    echo -e "${C_RED}${C_BOLD}[WARNING] This will PERMANENTLY delete database '${target_db}' and all its data!${C_RESET}"
+    read -r -p "Type '${target_db}' to confirm deletion: " confirm_del
+
+    if [[ "$confirm_del" != "$target_db" ]]; then
+        log_info "Confirmation mismatch. Deletion cancelled."
+        return 0
+    fi
+
+    log_info "Dropping database \`${target_db}\`..."
+    if docker exec -i wp_db mysql -u root -p"${DB_ROOT_PASSWORD}" -e "DROP DATABASE \`${target_db}\`;" 2>/dev/null; then
+        log_success "Database '${target_db}' has been permanently deleted."
+    else
+        log_error "Failed to drop database '${target_db}'."
+    fi
+}
+
+db_pma_start() {
+    echo ""
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+    echo -e "                   ${C_CYAN}START PHPMYADMIN (WEB GUI)${C_RESET}"
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+
+    if [[ ! -f .env ]]; then
+        log_error "No .env file found. Stack has not been deployed yet."
+        return 1
+    fi
+
+    # shellcheck disable=SC1091
+    source .env
+
+    if docker ps --filter "name=wp_pma" --filter "status=running" | grep -q "wp_pma"; then
+        local running_port
+        running_port=$(docker port wp_pma 80 2>/dev/null | cut -d ':' -f2 || echo "8080")
+        log_info "phpMyAdmin is ALREADY running on port: ${running_port}"
+        echo -e " URL: ${C_CYAN}http://YOUR_SERVER_IP:${running_port}${C_RESET}"
+        return 0
+    fi
+
+    read -r -p "Enter port for phpMyAdmin [default: 8080]: " pma_port_input
+    local pma_port="${pma_port_input:-8080}"
+
+    if is_port_in_use "$pma_port"; then
+        log_error "Port $pma_port is currently in use. Please choose another port."
+        return 1
+    fi
+
+    log_info "Launching on-demand phpMyAdmin container on port ${pma_port}..."
+    docker rm -f wp_pma 2>/dev/null || true
+
+    docker run -d \
+      --name wp_pma \
+      --restart unless-stopped \
+      --network wp_network \
+      -p "${pma_port}:80" \
+      -e PMA_HOST=db \
+      -e PMA_PORT=3306 \
+      -e UPLOAD_LIMIT=1024M \
+      phpmyadmin/phpmyadmin:latest >/dev/null
+
+    local srv_ip
+    srv_ip=$(curl -s4 --max-time 3 https://api.ipify.org 2>/dev/null || echo "YOUR_SERVER_IP")
+
+    echo ""
+    log_success "phpMyAdmin is now active!"
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+    echo -e " phpMyAdmin URL:  ${C_CYAN}http://${srv_ip}:${pma_port}${C_RESET}"
+    echo -e " Server Host:     ${C_BOLD}db${C_RESET}"
+    echo -e " Username:        ${C_BOLD}root${C_RESET} (or ${DB_USER:-wp_user})"
+    echo -e " Password:        ${C_YELLOW}${DB_ROOT_PASSWORD:-}${C_RESET}"
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+    echo -e " ${C_YELLOW}SECURITY TIP: When finished with database operations,${C_RESET}"
+    echo -e " ${C_YELLOW}stop phpMyAdmin via menu to prevent public exposure & free RAM.${C_RESET}"
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+}
+
+db_pma_stop() {
+    echo ""
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+    echo -e "                    ${C_CYAN}STOP PHPMYADMIN WEB GUI${C_RESET}"
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+
+    if docker ps -a --filter "name=wp_pma" --format "{{.Names}}" | grep -q "wp_pma"; then
+        log_info "Stopping and removing phpMyAdmin container (wp_pma)..."
+        docker rm -f wp_pma >/dev/null
+        log_success "phpMyAdmin container has been stopped. Port and memory are freed."
+    else
+        log_info "phpMyAdmin container is not currently running."
+    fi
+}
+
+database_menu() {
+    while true; do
+        scroll_to_top
+        echo ""
+        echo -e "${C_CYAN}${C_BOLD}"
+        echo "===================================================================="
+        echo "                 DATABASE MANAGEMENT SYSTEM"
+        echo "===================================================================="
+        echo -e "${C_RESET}"
+        echo -e " [${C_BOLD}1${C_RESET}] View Database Credentials & List Active Databases"
+        echo -e " [${C_BOLD}2${C_RESET}] Create New Database & User"
+        echo -e " [${C_BOLD}3${C_RESET}] Delete an Existing Database"
+        echo -e " [${C_BOLD}4${C_RESET}] Start phpMyAdmin (Web GUI on Port 8080)"
+        echo -e " [${C_BOLD}5${C_RESET}] Stop phpMyAdmin (Disable Web GUI & Free RAM)"
+        echo -e " [${C_BOLD}0${C_RESET}] Back to Main Menu"
+        echo -e "${C_CYAN}====================================================================${C_RESET}"
+
+        if ! read -r -p "Enter choice [0-5] and press Enter: " db_choice; then
+            break
+        fi
+
+        case "$db_choice" in
+            1)
+                db_view_info
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            2)
+                bash scripts/db-create.sh
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            3)
+                db_delete
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            4)
+                db_pma_start
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            5)
+                db_pma_stop
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            0)
+                break
+                ;;
+            *)
+                log_warn "Invalid selection. Please choose a number between 0 and 5."
+                sleep 1.2
+                ;;
+        esac
+    done
+}
+
+deploy_menu() {
+    while true; do
+        scroll_to_top
+        echo ""
+        echo -e "${C_CYAN}${C_BOLD}"
+        echo "===================================================================="
+        echo "                    DEPLOYMENT & RESTORATION"
+        echo "===================================================================="
+        echo -e "${C_RESET}"
+        echo -e " [${C_BOLD}1${C_RESET}] Deploy Fresh WordPress (Nginx, PHP, WP Core, Isolated DB, SSL)"
+        echo -e " [${C_BOLD}2${C_RESET}] Deploy Stack for Migration / Restore (Duplicator & Backupino Ready)"
+        echo -e " [${C_BOLD}0${C_RESET}] Back to Main Menu"
+        echo -e "${C_CYAN}====================================================================${C_RESET}"
+
+        if ! read -r -p "Enter choice [0-2] and press Enter: " dep_choice; then
+            break
+        fi
+
+        case "$dep_choice" in
+            1)
+                deploy_stack "fresh"
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            2)
+                deploy_stack "migration"
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            0)
+                break
+                ;;
+            *)
+                log_warn "Invalid selection."
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+service_menu() {
+    while true; do
+        scroll_to_top
+        echo ""
+        echo -e "${C_CYAN}${C_BOLD}"
+        echo "===================================================================="
+        echo "                  SERVICE CONTROL & MONITORING"
+        echo "===================================================================="
+        echo -e "${C_RESET}"
+        echo -e " [${C_BOLD}1${C_RESET}] Start / Restart Stack Services"
+        echo -e " [${C_BOLD}2${C_RESET}] Stop Stack Services (Safe Pause & Free Ports)"
+        echo -e " [${C_BOLD}3${C_RESET}] Service Status & Resource Usage (Stats)"
+        echo -e " [${C_BOLD}4${C_RESET}] View Service Logs (Nginx, PHP, Database, Certbot)"
+        echo -e " [${C_BOLD}0${C_RESET}] Back to Main Menu"
+        echo -e "${C_CYAN}====================================================================${C_RESET}"
+
+        if ! read -r -p "Enter choice [0-4] and press Enter: " srv_choice; then
+            break
+        fi
+
+        case "$srv_choice" in
+            1)
+                start_restart_stack
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            2)
+                stop_stack
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            3)
+                check_status
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            4)
+                view_logs
+                ;;
+            0)
+                break
+                ;;
+            *)
+                log_warn "Invalid selection."
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+maintenance_menu() {
+    while true; do
+        scroll_to_top
+        echo ""
+        echo -e "${C_CYAN}${C_BOLD}"
+        echo "===================================================================="
+        echo "                      MAINTENANCE & UPDATES"
+        echo "===================================================================="
+        echo -e "${C_RESET}"
+        echo -e " [${C_BOLD}1${C_RESET}] Update Container Images & Stack Dependencies"
+        echo -e " [${C_BOLD}2${C_RESET}] Self-Update Script (Pull latest from GitHub)"
+        echo -e " [${C_BOLD}0${C_RESET}] Back to Main Menu"
+        echo -e "${C_CYAN}====================================================================${C_RESET}"
+
+        if ! read -r -p "Enter choice [0-2] and press Enter: " mnt_choice; then
+            break
+        fi
+
+        case "$mnt_choice" in
+            1)
+                update_dependencies
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            2)
+                self_update
+                ;;
+            0)
+                break
+                ;;
+            *)
+                log_warn "Invalid selection."
+                sleep 1
+                ;;
+        esac
+    done
 }
 
 # ------------------------------------------------------------------------------
@@ -665,59 +1003,24 @@ main_menu() {
         echo "           WordPress & Docker Stack Manager (Isolated)"
         echo "===================================================================="
         echo -e "${C_RESET}"
-        echo -e " [${C_BOLD}1${C_RESET}] Deploy Fresh WordPress (Nginx, PHP, WP Core, Isolated DB & SSL)"
-        echo -e " [${C_BOLD}2${C_RESET}] Deploy Stack for Migration / Restore (Duplicator & Backupino Ready)"
-        echo -e " [${C_BOLD}3${C_RESET}] Create New Database & User (Inside Existing DB Container)"
-        echo -e " [${C_BOLD}4${C_RESET}] Start / Restart Services (Resume or reboot stack)"
-        echo -e " [${C_BOLD}5${C_RESET}] Stop Services (Safely pause stack & release ports)"
-        echo -e " [${C_BOLD}6${C_RESET}] Service Status & Health Check"
-        echo -e " [${C_BOLD}7${C_RESET}] View Service Logs (Nginx, PHP, Database, Certbot)"
-        echo -e " [${C_BOLD}8${C_RESET}] Update Dependencies & Container Images"
-        echo -e " [${C_BOLD}9${C_RESET}] Self-Update Script (Pull latest from GitHub)"
-        echo -e " [${C_BOLD}10${C_RESET}] Complete Uninstall (Safe Purge of this Stack Only)"
+        echo -e " [${C_BOLD}1${C_RESET}] Deployment & Restoration (Fresh WP / Duplicator Restore)"
+        echo -e " [${C_BOLD}2${C_RESET}] Database Management (Create, Delete, View Info, phpMyAdmin)"
+        echo -e " [${C_BOLD}3${C_RESET}] Service Operations (Start, Stop, Restart, Status, Logs)"
+        echo -e " [${C_BOLD}4${C_RESET}] Maintenance & Updates (Update Images, Self-Update Script)"
+        echo -e " [${C_BOLD}5${C_RESET}] Complete Uninstall (Safe Purge Stack Only)"
         echo -e " [${C_BOLD}0${C_RESET}] Exit"
         echo -e "${C_CYAN}====================================================================${C_RESET}"
         
-        if ! read -r -p "Enter choice [0-10] and press Enter: " user_choice; then
+        if ! read -r -p "Enter choice [0-5] and press Enter: " user_choice; then
             cleanup_and_exit
         fi
 
         case "$user_choice" in
-            1)
-                deploy_stack "fresh"
-                read -r -p "Press [Enter] to return to the main menu..." _
-                ;;
-            2)
-                deploy_stack "migration"
-                read -r -p "Press [Enter] to return to the main menu..." _
-                ;;
-            3)
-                bash scripts/db-create.sh
-                read -r -p "Press [Enter] to return to the main menu..." _
-                ;;
-            4)
-                start_restart_stack
-                read -r -p "Press [Enter] to return to the main menu..." _
-                ;;
+            1) deploy_menu ;;
+            2) database_menu ;;
+            3) service_menu ;;
+            4) maintenance_menu ;;
             5)
-                stop_stack
-                read -r -p "Press [Enter] to return to the main menu..." _
-                ;;
-            6)
-                check_status
-                read -r -p "Press [Enter] to return to the main menu..." _
-                ;;
-            7)
-                view_logs
-                ;;
-            8)
-                update_dependencies
-                read -r -p "Press [Enter] to return to the main menu..." _
-                ;;
-            9)
-                self_update
-                ;;
-            10)
                 uninstall_stack
                 read -r -p "Press [Enter] to return to the main menu..." _
                 ;;
@@ -726,8 +1029,8 @@ main_menu() {
                 exit 0
                 ;;
             *)
-                log_warn "Invalid selection. Please choose a number between 0 and 10."
-                sleep 1.5
+                log_warn "Invalid selection. Please choose a number between 0 and 5."
+                sleep 1.2
                 ;;
         esac
     done
