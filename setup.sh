@@ -683,8 +683,8 @@ init_ols_container() {
         # 1. Create all required runtime directories
         mkdir -p /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache
 
-        # 2. Set directory permissions
-        chown -R nobody:nogroup /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/lscache 2>/dev/null || true
+        # 2. Set directory permissions and ownership (Fixes 403 Forbidden for static CSS/JS)
+        chown -R nobody:nogroup /var/www/vhosts/localhost/html /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/lscache 2>/dev/null || true
         chmod -R 777 /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache 2>/dev/null || true
         chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
 

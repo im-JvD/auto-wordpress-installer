@@ -45,6 +45,17 @@ RewriteRule . /index.php [L]
 END_rules
 }
 
+# Root Context for Static Assets & WordPress Documents (CSS, JS, Images, Media)
+context / {
+  location                $DOC_ROOT/
+  allowBrowse             1
+
+  rewrite  {
+    enable                1
+    autoLoadHtaccess      1
+  }
+}
+
 # Certbot ACME Challenge context
 context /.well-known/acme-challenge/ {
   location                /var/www/certbot/.well-known/acme-challenge/
