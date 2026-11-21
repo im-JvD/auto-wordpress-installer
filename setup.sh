@@ -279,10 +279,26 @@ verify_dns() {
 }
 
 # ------------------------------------------------------------------------------
-# PHP Version Selector Helper (7.4 to 8.3)
+# Web Server & PHP Version Selector Helpers
 # ------------------------------------------------------------------------------
+select_web_server() {
+    local default_sel="${1:-1}"
+    echo "" >&2
+    echo "Select Web Server Engine:" >&2
+    echo "  1) OpenLiteSpeed (Recommended - Native LSCache, HTTP/3 QUIC, .htaccess)" >&2
+    echo "  2) Nginx (Ultra-Lightweight & Battle-Tested)" >&2
+    read -r -p "Enter choice [1-2, default: ${default_sel}]: " user_ws_sel
+    user_ws_sel=${user_ws_sel:-$default_sel}
+
+    case "$user_ws_sel" in
+        2) echo "nginx" ;;
+        1|*) echo "openlitespeed" ;;
+    esac
+}
+
 select_php_version() {
-    local default_sel="${1:-5}"
+    local ws="${1:-openlitespeed}"
+    local default_sel="${2:-5}"
     echo "" >&2
     echo "Select PHP Version for WordPress:" >&2
     echo "  1) PHP 7.4 (Legacy support)" >&2
@@ -293,13 +309,23 @@ select_php_version() {
     read -r -p "Enter choice [1-5, default: ${default_sel}]: " user_php_sel
     user_php_sel=${user_php_sel:-$default_sel}
 
-    case "$user_php_sel" in
-        1) echo "wordpress:php7.4-fpm-alpine" ;;
-        2) echo "wordpress:php8.0-fpm-alpine" ;;
-        3) echo "wordpress:php8.1-fpm-alpine" ;;
-        4) echo "wordpress:php8.2-fpm-alpine" ;;
-        5|*) echo "wordpress:php8.3-fpm-alpine" ;;
-    esac
+    if [[ "$ws" == "openlitespeed" ]]; then
+        case "$user_php_sel" in
+            1) echo "litespeedtech/openlitespeed:1.7-lsphp74" ;;
+            2) echo "litespeedtech/openlitespeed:1.7-lsphp80" ;;
+            3) echo "litespeedtech/openlitespeed:latest-lsphp81" ;;
+            4) echo "litespeedtech/openlitespeed:latest-lsphp82" ;;
+            5|*) echo "litespeedtech/openlitespeed:latest-lsphp83" ;;
+        esac
+    else
+        case "$user_php_sel" in
+            1) echo "wordpress:php7.4-fpm-alpine" ;;
+            2) echo "wordpress:php8.0-fpm-alpine" ;;
+            3) echo "wordpress:php8.1-fpm-alpine" ;;
+            4) echo "wordpress:php8.2-fpm-alpine" ;;
+            5|*) echo "wordpress:php8.3-fpm-alpine" ;;
+        esac
+    fi
 }
 
 # ------------------------------------------------------------------------------
@@ -311,7 +337,7 @@ deploy_stack() {
     echo ""
     echo -e "${C_BOLD}====================================================================${C_RESET}"
     if [[ "$mode" == "fresh" ]]; then
-        echo -e "  ${C_CYAN}DEPLOY FRESH WORDPRESS (Nginx + PHP + Isolated DB + SSL)${C_RESET}"
+        echo -e "  ${C_CYAN}DEPLOY FRESH WORDPRESS (OpenLiteSpeed / Nginx + Isolated DB + SSL)${C_RESET}"
     else
         echo -e "  ${C_CYAN}DEPLOY STACK FOR MIGRATION (Duplicator / Backupino Ready)${C_RESET}"
     fi
@@ -321,7 +347,12 @@ deploy_stack() {
     check_ports || return 1
     check_docker || return 1
 
-    # Step 2: Select DB Engine
+    # Step 2: Select Web Server Engine (OpenLiteSpeed vs Nginx)
+    local selected_ws
+    selected_ws=$(select_web_server 1)
+    log_info "Selected Web Server Engine: ${selected_ws}"
+
+    # Step 2.1: Select DB Engine
     echo ""
     echo "Select Isolated Database Engine:"
     echo "  1) MariaDB 10.11 LTS (Recommended - Fast & Resource Efficient)"
@@ -333,10 +364,22 @@ deploy_stack() {
     fi
     log_info "Selected database engine: ${db_image}"
 
-    # Step 2.5: Select PHP Version (7.4 to 8.3)
-    local wp_image
-    wp_image=$(select_php_version 5)
-    log_info "Selected PHP Image: ${wp_image}"
+    # Step 2.2: Select PHP Version (7.4 to 8.3)
+    local selected_php_image
+    selected_php_image=$(select_php_version "${selected_ws}" 5)
+    log_info "Selected PHP Image: ${selected_php_image}"
+
+    local ols_image="litespeedtech/openlitespeed:latest-lsphp83"
+    local wp_image="wordpress:php8.3-fpm-alpine"
+    local compose_profile="ols"
+
+    if [[ "$selected_ws" == "openlitespeed" ]]; then
+        ols_image="${selected_php_image}"
+        compose_profile="ols"
+    else
+        wp_image="${selected_php_image}"
+        compose_profile="nginx"
+    fi
 
     # Step 3: Domain Name
     echo ""
@@ -404,6 +447,8 @@ DOMAIN_NAME=${domain_input}
 CERTBOT_EMAIL=${email_input}
 HTTP_PORT=${TARGET_HTTP_PORT}
 HTTPS_PORT=${TARGET_HTTPS_PORT}
+WEB_SERVER=${selected_ws}
+COMPOSE_PROFILES=${compose_profile}
 DB_IMAGE=${db_image}
 DB_NAME=${db_name_input}
 DB_USER=${db_user_input}
@@ -412,8 +457,16 @@ DB_ROOT_PASSWORD=${db_root_pass}
 WP_TABLE_PREFIX=wp_
 WP_ENTRYPOINT=${wp_entrypoint}
 WP_IMAGE=${wp_image}
+OLS_IMAGE=${ols_image}
 EOF
     chmod 600 .env
+
+    # Sync web server config
+    if [[ "$selected_ws" == "openlitespeed" ]]; then
+        sync_ols_config
+    else
+        sync_nginx_config
+    fi
 
     # Step 10: Request SSL
     chmod +x scripts/*.sh
@@ -423,6 +476,11 @@ EOF
         return 1
     fi
 
+    # Sync OLS with newly obtained SSL certificates if needed
+    if [[ "$selected_ws" == "openlitespeed" ]]; then
+        sync_ols_config
+    fi
+
     # Step 11: Launch Full Stack
     log_info "Starting full WordPress & isolated database stack..."
     docker compose up -d
@@ -430,12 +488,21 @@ EOF
 
     if [[ "$mode" == "migration" ]]; then
         log_info "Purging raw WordPress files to ensure a 100% clean directory for Duplicator / Backupino..."
-        docker exec wp_app sh -c 'rm -rf /var/www/html/* /var/www/html/.[!.]* 2>/dev/null || true'
+        if [[ "$selected_ws" == "openlitespeed" ]]; then
+            docker exec wp_ols sh -c 'rm -rf /var/www/vhosts/localhost/html/* /var/www/vhosts/localhost/html/.[!.]* 2>/dev/null || true'
+        else
+            docker exec wp_app sh -c 'rm -rf /var/www/html/* /var/www/html/.[!.]* 2>/dev/null || true'
+        fi
         log_success "Directory /opt/wp-docker/html is now clean and empty."
     fi
 
-    # Ensure pdo_mysql is enabled for backup and restore tools (Backupino / Duplicator)
-    ensure_php_extensions
+    # Ensure permissions and extensions
+    if [[ "$selected_ws" == "openlitespeed" ]]; then
+        docker exec wp_ols chown -R www-data:www-data /var/www/vhosts/localhost/html 2>/dev/null || true
+    else
+        docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
+        ensure_php_extensions
+    fi
 
     echo ""
     log_info "Waiting for database and WordPress services to stabilize..."
@@ -453,6 +520,10 @@ EOF
     else
         echo -e " Website URL:         ${C_CYAN}https://${domain_input}${C_RESET}"
         echo -e " Active HTTPS Port:   443 (Standard)"
+    fi
+    echo -e " Web Server Engine:   ${C_GREEN}${selected_ws}${C_RESET}"
+    if [[ "$selected_ws" == "openlitespeed" ]]; then
+        echo -e " Server-Level Cache:  ${C_GREEN}Native LiteSpeed Cache (LSCache) & HTTP/3 QUIC Active${C_RESET}"
     fi
     echo -e " SSL Status:          ${C_GREEN}Active (Let's Encrypt with Auto-Renewal)${C_RESET}"
     echo -e " Database Host:       ${C_BOLD}db${C_RESET} (Internal Docker network only)"
@@ -530,6 +601,39 @@ sync_nginx_config() {
 }
 
 # ------------------------------------------------------------------------------
+# Sync & Reload OpenLiteSpeed Configuration from Template
+# ------------------------------------------------------------------------------
+sync_ols_config() {
+    if [[ -f .env ]]; then
+        local dom
+        dom=$(grep '^DOMAIN_NAME=' .env | cut -d '=' -f2)
+        local http_p
+        http_p=$(grep '^HTTP_PORT=' .env | cut -d '=' -f2 || echo "80")
+        http_p=${http_p:-80}
+        local https_p
+        https_p=$(grep '^HTTPS_PORT=' .env | cut -d '=' -f2 || echo "443")
+        https_p=${https_p:-443}
+
+        if [[ -n "$dom" ]]; then
+            log_info "Syncing OpenLiteSpeed configurations (Listeners, LSCache, SSL)..."
+            mkdir -p ols/conf/vhosts/localhost
+            sed -e "s/\${DOMAIN_NAME}/${dom}/g" \
+                -e "s/\${HTTP_PORT}/${http_p}/g" \
+                -e "s/\${HTTPS_PORT}/${https_p}/g" \
+                ols/httpd_config.conf.template > ols/conf/httpd_config.conf
+
+            sed -e "s/\${DOMAIN_NAME}/${dom}/g" \
+                ols/vhconf.conf.template > ols/conf/vhosts/localhost/vhconf.conf
+
+            if docker ps --filter "name=wp_ols" --filter "status=running" | grep -q "wp_ols"; then
+                docker restart wp_ols >/dev/null 2>&1 || true
+            fi
+            log_success "OpenLiteSpeed configuration synchronized successfully."
+        fi
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # Start / Restart Stack Services
 # ------------------------------------------------------------------------------
 start_restart_stack() {
@@ -543,11 +647,27 @@ start_restart_stack() {
         return 1
     fi
 
-    log_info "Starting / restarting all containers for this stack..."
+    local current_ws
+    current_ws=$(grep '^WEB_SERVER=' .env | cut -d '=' -f2 || echo "nginx")
+    current_ws=${current_ws:-nginx}
+
+    log_info "Starting / restarting all active containers (${current_ws} stack)..."
+    if [[ "$current_ws" == "openlitespeed" ]]; then
+        sync_ols_config
+    else
+        sync_nginx_config
+    fi
+
     docker compose up -d
-    ensure_php_extensions
-    sync_nginx_config
-    log_success "All stack services (Nginx, WordPress, Database, Certbot) are active and running."
+
+    if [[ "$current_ws" == "openlitespeed" ]]; then
+        docker exec wp_ols chown -R www-data:www-data /var/www/vhosts/localhost/html 2>/dev/null || true
+    else
+        ensure_php_extensions
+        docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
+    fi
+
+    log_success "All stack services (Web Server: ${current_ws}, Database, Certbot) are active and running."
 }
 
 # ------------------------------------------------------------------------------
@@ -566,7 +686,7 @@ stop_stack() {
 
     log_info "Stopping all containers for this WordPress stack..."
     docker compose stop
-    log_success "All stack services (Nginx, WordPress, Database, Certbot) have been stopped."
+    log_success "All stack services (Nginx / OpenLiteSpeed, WordPress, Database, Certbot) have been stopped."
     echo -e "${C_CYAN}Note: All files, databases, and SSL certificates remain safely stored in Docker volumes.${C_RESET}"
     echo -e "${C_CYAN}Ports are now temporarily freed.${C_RESET}"
 }
@@ -585,13 +705,24 @@ update_dependencies() {
         return 1
     fi
 
-    log_info "Pulling newest container images for this stack..."
+    local current_ws
+    current_ws=$(grep '^WEB_SERVER=' .env | cut -d '=' -f2 || echo "nginx")
+    current_ws=${current_ws:-nginx}
+
+    log_info "Pulling newest container images for active profile (${current_ws})..."
     docker compose pull
 
     log_info "Recreating containers with updated images..."
     docker compose up -d
-    ensure_php_extensions
-    sync_nginx_config
+
+    if [[ "$current_ws" == "openlitespeed" ]]; then
+        sync_ols_config
+        docker exec wp_ols chown -R www-data:www-data /var/www/vhosts/localhost/html 2>/dev/null || true
+    else
+        sync_nginx_config
+        ensure_php_extensions
+        docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
+    fi
 
     log_success "WordPress stack containers have been updated successfully."
 }
@@ -639,7 +770,7 @@ view_logs() {
         echo -e "${C_BOLD}====================================================================${C_RESET}"
         echo -e "                       ${C_CYAN}VIEW SERVICE LOGS${C_RESET}"
         echo -e "${C_BOLD}====================================================================${C_RESET}"
-        echo " [1] Nginx Web Server Logs"
+        echo " [1] Web Server (OpenLiteSpeed / Nginx) Logs"
         echo " [2] WordPress (PHP-FPM) Logs"
         echo " [3] Isolated Database Logs"
         echo " [4] Certbot SSL Renewal Logs"
@@ -649,8 +780,8 @@ view_logs() {
         read -r -p "Enter choice [0-5]: " log_choice
 
         case "$log_choice" in
-            1) docker compose logs --tail=100 nginx ;;
-            2) docker compose logs --tail=100 wordpress ;;
+            1) docker compose logs --tail=100 openlitespeed nginx 2>/dev/null ;;
+            2) docker compose logs --tail=100 wordpress 2>/dev/null ;;
             3) docker compose logs --tail=100 db ;;
             4) docker compose logs --tail=100 certbot ;;
             5) docker compose logs -f --tail=50 ;;
@@ -702,7 +833,7 @@ uninstall_stack() {
     echo -e "     ${C_RED}DANGER ZONE: COMPLETE UNINSTALL OF THIS WORDPRESS STACK${C_RESET}"
     echo -e "${C_BOLD}====================================================================${C_RESET}"
     echo -e "${C_YELLOW}This operation will strictly target ONLY this WordPress deployment:${C_RESET}"
-    echo " - Stop & remove containers (wp_nginx, wp_app, wp_db, wp_certbot)"
+    echo " - Stop & remove containers (wp_nginx, wp_ols, wp_app, wp_db, wp_certbot)"
     echo " - Delete the dedicated volumes (wp_data, wp_db_data)"
     echo " - Remove the dedicated Docker network (wp_network)"
     echo ""
@@ -718,11 +849,11 @@ uninstall_stack() {
     fi
 
     log_info "Stopping and removing stack containers and volumes..."
-    docker rm -f wp_pma 2>/dev/null || true
+    docker rm -f wp_pma wp_ols wp_nginx wp_app 2>/dev/null || true
     docker compose down -v --rmi local 2>/dev/null || docker compose down -v 2>/dev/null || true
 
     log_info "Cleaning configuration and SSL cache..."
-    rm -f .env nginx/conf.d/default.conf "${SCRIPT_DIR}/html"
+    rm -f .env nginx/conf.d/default.conf ols/conf/httpd_config.conf ols/conf/vhosts/localhost/vhconf.conf "${SCRIPT_DIR}/html"
     rm -rf certbot/conf/* certbot/www/*
 
     if [[ -f "/usr/local/bin/wordpress" ]]; then
@@ -1034,8 +1165,105 @@ service_menu() {
 }
 
 # ------------------------------------------------------------------------------
-# PHP Version Management Functions (7.4 to 8.3)
+# Web Server & PHP Version Management Functions
 # ------------------------------------------------------------------------------
+switch_web_server() {
+    echo ""
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+    echo -e "              ${C_CYAN}SWITCH WEB SERVER (OpenLiteSpeed ⇄ Nginx)${C_RESET}"
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+
+    if [[ ! -f .env ]]; then
+        log_error "No .env file found. Stack has not been deployed yet."
+        return 1
+    fi
+
+    local current_ws
+    current_ws=$(grep '^WEB_SERVER=' .env | cut -d '=' -f2 || echo "nginx")
+    current_ws=${current_ws:-nginx}
+
+    echo -e " Current Active Web Server: ${C_GREEN}${current_ws}${C_RESET}"
+    echo ""
+    echo "Select Target Web Server Engine:"
+    echo "  1) OpenLiteSpeed (Recommended - Native LSCache, HTTP/3 QUIC, .htaccess)"
+    echo "  2) Nginx (Ultra-Lightweight & Battle-Tested)"
+    read -r -p "Enter choice [1-2]: " target_ws_choice
+
+    local target_ws="openlitespeed"
+    if [[ "$target_ws_choice" == "2" ]]; then
+        target_ws="nginx"
+    fi
+
+    if [[ "$target_ws" == "$current_ws" ]]; then
+        log_info "The stack is already configured to use ${target_ws}."
+        return 0
+    fi
+
+    log_info "Switching web server engine from ${current_ws} to ${target_ws}..."
+
+    if [[ "$target_ws" == "openlitespeed" ]]; then
+        log_info "Stopping Nginx & PHP-FPM containers..."
+        docker compose --profile nginx stop nginx wordpress 2>/dev/null || true
+
+        # Ensure OLS config exists
+        sync_ols_config
+
+        # Update .env
+        if grep -q '^WEB_SERVER=' .env; then
+            sed -i 's|^WEB_SERVER=.*|WEB_SERVER=openlitespeed|' .env
+        else
+            echo "WEB_SERVER=openlitespeed" >> .env
+        fi
+
+        if grep -q '^COMPOSE_PROFILES=' .env; then
+            sed -i 's|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=ols|' .env
+        else
+            echo "COMPOSE_PROFILES=ols" >> .env
+        fi
+
+        log_info "Starting OpenLiteSpeed web server..."
+        docker compose up -d openlitespeed
+
+        sleep 2
+        # Ensure proper file permissions
+        docker exec wp_ols chown -R www-data:www-data /var/www/vhosts/localhost/html 2>/dev/null || true
+    else
+        log_info "Stopping OpenLiteSpeed container..."
+        docker compose --profile ols stop openlitespeed 2>/dev/null || true
+
+        # Ensure Nginx config exists
+        sync_nginx_config
+
+        # Update .env
+        if grep -q '^WEB_SERVER=' .env; then
+            sed -i 's|^WEB_SERVER=.*|WEB_SERVER=nginx|' .env
+        else
+            echo "WEB_SERVER=nginx" >> .env
+        fi
+
+        if grep -q '^COMPOSE_PROFILES=' .env; then
+            sed -i 's|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=nginx|' .env
+        else
+            echo "COMPOSE_PROFILES=nginx" >> .env
+        fi
+
+        log_info "Starting Nginx & WordPress PHP-FPM..."
+        docker compose up -d wordpress nginx
+
+        sleep 2
+        ensure_php_extensions
+        docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
+    fi
+
+    sleep 2
+    echo ""
+    log_success "Successfully switched web server engine to ${target_ws}!"
+    echo -e " Your website is now powered by: ${C_GREEN}${target_ws}${C_RESET}"
+    if [[ "$target_ws" == "openlitespeed" ]]; then
+        echo -e " ${C_CYAN}[Tip] You can now install or enable the 'LiteSpeed Cache' plugin in WordPress to enjoy native server-level caching!${C_RESET}"
+    fi
+}
+
 change_php_version() {
     echo ""
     echo -e "${C_BOLD}====================================================================${C_RESET}"
@@ -1047,34 +1275,61 @@ change_php_version() {
         return 1
     fi
 
+    local current_ws
+    current_ws=$(grep '^WEB_SERVER=' .env | cut -d '=' -f2 || echo "nginx")
+    current_ws=${current_ws:-nginx}
+
     local current_php="Unknown"
-    if docker ps --filter "name=wp_app" --filter "status=running" | grep -q "wp_app"; then
-        current_php=$(docker exec wp_app php -v 2>/dev/null | head -n 1 || echo "Unknown")
+    if [[ "$current_ws" == "openlitespeed" ]]; then
+        if docker ps --filter "name=wp_ols" --filter "status=running" | grep -q "wp_ols"; then
+            current_php=$(docker exec wp_ols php -v 2>/dev/null | head -n 1 || echo "Unknown")
+        fi
+    else
+        if docker ps --filter "name=wp_app" --filter "status=running" | grep -q "wp_app"; then
+            current_php=$(docker exec wp_app php -v 2>/dev/null | head -n 1 || echo "Unknown")
+        fi
     fi
-    echo -e " Current Active PHP: ${C_GREEN}${current_php}${C_RESET}"
+    echo -e " Current Web Server Engine: ${C_CYAN}${current_ws}${C_RESET}"
+    echo -e " Current Active PHP:        ${C_GREEN}${current_php}${C_RESET}"
 
     local new_image
-    new_image=$(select_php_version 5)
+    new_image=$(select_php_version "${current_ws}" 5)
 
-    log_info "Updating PHP version to ${new_image} in .env..."
-    if grep -q '^WP_IMAGE=' .env; then
-        sed -i "s|^WP_IMAGE=.*|WP_IMAGE=${new_image}|" .env
+    if [[ "$current_ws" == "openlitespeed" ]]; then
+        log_info "Updating OpenLiteSpeed PHP version to ${new_image} in .env..."
+        if grep -q '^OLS_IMAGE=' .env; then
+            sed -i "s|^OLS_IMAGE=.*|OLS_IMAGE=${new_image}|" .env
+        else
+            echo "OLS_IMAGE=${new_image}" >> .env
+        fi
+        log_info "Pulling new OpenLiteSpeed container image (${new_image})..."
+        docker compose pull openlitespeed
+
+        log_info "Recreating OpenLiteSpeed container with new PHP version..."
+        docker compose up -d openlitespeed
+        sleep 2
+        sync_ols_config
+        local updated_php
+        updated_php=$(docker exec wp_ols php -v 2>/dev/null | head -n 1 || echo "Updated")
     else
-        echo "WP_IMAGE=${new_image}" >> .env
+        log_info "Updating WordPress PHP version to ${new_image} in .env..."
+        if grep -q '^WP_IMAGE=' .env; then
+            sed -i "s|^WP_IMAGE=.*|WP_IMAGE=${new_image}|" .env
+        else
+            echo "WP_IMAGE=${new_image}" >> .env
+        fi
+        log_info "Pulling new PHP container image (${new_image})..."
+        docker compose pull wordpress
+
+        log_info "Recreating WordPress container with new PHP version..."
+        docker compose up -d wordpress
+        sleep 2
+        ensure_php_extensions
+        docker restart wp_nginx >/dev/null 2>&1 || true
+        local updated_php
+        updated_php=$(docker exec wp_app php -v 2>/dev/null | head -n 1 || echo "Updated")
     fi
 
-    log_info "Pulling new PHP container image (${new_image})..."
-    docker compose pull wordpress
-
-    log_info "Recreating WordPress container with new PHP version..."
-    docker compose up -d wordpress
-    sleep 2
-
-    ensure_php_extensions
-    docker restart wp_nginx >/dev/null 2>&1 || true
-
-    local updated_php
-    updated_php=$(docker exec wp_app php -v 2>/dev/null | head -n 1 || echo "Updated")
     echo ""
     log_success "Successfully switched PHP version!"
     echo -e " Active PHP Version: ${C_GREEN}${updated_php}${C_RESET}"
@@ -1089,33 +1344,38 @@ maintenance_menu() {
         echo "                      MAINTENANCE & UPDATES"
         echo "===================================================================="
         echo -e "${C_RESET}"
-        echo -e " [${C_BOLD}1${C_RESET}] Switch / Change PHP Version (7.4, 8.0, 8.1, 8.2, 8.3)"
-        echo -e " [${C_BOLD}2${C_RESET}] Update Container Images & Stack Dependencies"
-        echo -e " [${C_BOLD}3${C_RESET}] Self-Update Script (Pull latest from GitHub)"
+        echo -e " [${C_BOLD}1${C_RESET}] Switch / Change Web Server (OpenLiteSpeed ⇄ Nginx)"
+        echo -e " [${C_BOLD}2${C_RESET}] Switch / Change PHP Version (7.4, 8.0, 8.1, 8.2, 8.3)"
+        echo -e " [${C_BOLD}3${C_RESET}] Update Container Images & Stack Dependencies"
+        echo -e " [${C_BOLD}4${C_RESET}] Self-Update Script (Pull latest from GitHub)"
         echo -e " [${C_BOLD}0${C_RESET}] Back to Main Menu"
         echo -e "${C_CYAN}====================================================================${C_RESET}"
 
-        if ! read -r -p "Enter choice [0-3] and press Enter: " mnt_choice; then
+        if ! read -r -p "Enter choice [0-4] and press Enter: " mnt_choice; then
             break
         fi
 
         case "$mnt_choice" in
             1)
-                change_php_version
+                switch_web_server
                 read -r -p "Press [Enter] to return..." _
                 ;;
             2)
-                update_dependencies
+                change_php_version
                 read -r -p "Press [Enter] to return..." _
                 ;;
             3)
+                update_dependencies
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            4)
                 self_update
                 ;;
             0)
                 break
                 ;;
             *)
-                log_warn "Invalid selection. Please choose between 0 and 3."
+                log_warn "Invalid selection. Please choose between 0 and 4."
                 sleep 1.2
                 ;;
         esac

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Script: ssl-init.sh
-# Purpose: Two-stage Let's Encrypt SSL Certificate Bootstrap with Nginx & Certbot
+# Purpose: Two-stage Let's Encrypt SSL Certificate Bootstrap
 # ==============================================================================
 
 set -euo pipefail
@@ -25,20 +25,22 @@ if [[ -z "${DOMAIN_NAME:-}" ]] || [[ -z "${CERTBOT_EMAIL:-}" ]]; then
     exit 1
 fi
 
+local_web_server="${WEB_SERVER:-openlitespeed}"
+
 echo "[INFO] Initializing SSL setup for domain: ${DOMAIN_NAME}..."
 
 # Step 1: Create directories if not exist
-mkdir -p certbot/conf certbot/www nginx/conf.d
+mkdir -p certbot/conf certbot/www nginx/conf.d ols/conf/vhosts/localhost
 
-# Step 2: Prepare temporary HTTP config
+# Step 2: Prepare temporary HTTP challenge config via Nginx
 echo "[INFO] Generating temporary HTTP challenge configuration..."
 sed "s/\${DOMAIN_NAME}/${DOMAIN_NAME}/g" nginx/conf.d/http.conf.template > nginx/conf.d/default.conf
 
-# Step 3: Start Nginx container only for ACME challenge
-echo "[INFO] Starting Nginx for ACME challenge..."
-docker compose up -d nginx
+# Step 3: Start Nginx container specifically for ACME challenge
+echo "[INFO] Starting lightweight ACME challenge responder..."
+docker compose --profile nginx up -d nginx
 
-# Wait for Nginx to spin up
+# Wait for container to spin up
 sleep 3
 
 # Step 4: Request SSL certificate via Certbot container
@@ -58,13 +60,15 @@ KEY_PATH="certbot/conf/live/${DOMAIN_NAME}/privkey.pem"
 if [[ -f "${CERT_PATH}" ]] && [[ -f "${KEY_PATH}" ]]; then
     echo "[SUCCESS] SSL Certificate obtained successfully for ${DOMAIN_NAME}!"
     
-    # Step 6: Apply production SSL configuration
-    echo "[INFO] Applying production HTTPS Nginx configuration..."
-    sed "s/\${DOMAIN_NAME}/${DOMAIN_NAME}/g" nginx/conf.d/ssl.conf.template > nginx/conf.d/default.conf
-    
-    echo "[INFO] Reloading Nginx with SSL configuration..."
-    docker compose exec nginx nginx -s reload || docker compose restart nginx
-    echo "[SUCCESS] HTTPS configuration is active."
+    if [[ "$local_web_server" == "nginx" ]]; then
+        echo "[INFO] Applying production HTTPS Nginx configuration..."
+        sed "s/\${DOMAIN_NAME}/${DOMAIN_NAME}/g" nginx/conf.d/ssl.conf.template > nginx/conf.d/default.conf
+        docker compose --profile nginx exec nginx nginx -s reload 2>/dev/null || docker compose --profile nginx restart nginx 2>/dev/null || true
+        echo "[SUCCESS] HTTPS Nginx configuration is active."
+    else
+        echo "[INFO] SSL ready. Stopping temporary ACME responder for OpenLiteSpeed transition..."
+        docker compose --profile nginx stop nginx 2>/dev/null || true
+    fi
     exit 0
 else
     echo "[ERROR] SSL certificate was not created. Check Certbot output above for errors."

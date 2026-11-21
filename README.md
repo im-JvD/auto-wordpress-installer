@@ -96,6 +96,7 @@ wordpress
 * **View Service Logs:** مشاهده لاگ‌های اختصاصی وب‌سرور Nginx، سرویس PHP-FPM، دیتابیس، تمدید خودکار Certbot یا استریم زنده تمامی لاگ‌ها.
 
 ### [4] نگهداری و بروزرسانی‌ها (Maintenance & Updates)
+* **Switch / Change Web Server:** جابجایی و تغییر آنی و کاملاً ایمن بین وب‌سرورهای OpenLiteSpeed و Nginx بدون داون‌تایم و با حفظ ۱۰۰٪ فایل‌ها و دیتابیس.
 * **Switch / Change PHP Version:** تغییر و سوییچ آنی نسخه PHP به هر کدام از نسخه‌های دلخواه (PHP 7.4, 8.0, 8.1, 8.2, 8.3) با یک کلیک و کامپایل خودکار درایورهای دیتابیس.
 * **Update Container Images:** دریافت آخرین نسخه‌های پایدار ایمیج‌های داکر و بازسازی مجدد کانتینرها بدون از دست رفتن اطلاعات.
 * **Self-Update Script:** همگام‌سازی و بروزرسانی مستقیم و هوشمند اسکریپت از مخزن رسمی گیت‌هاب با یک کلیک.
@@ -166,15 +167,18 @@ wordpress
 /opt/wp-docker/
 ├── setup.sh                 # اسکریپت اصلی مدیریت و منوی ترمینال
 ├── html/                    # پوشه میانبر مستقیم به فایل‌های سایت (مخصوص آپلود در WinSCP/FileZilla)
-├── docker-compose.yml       # پیکربندی کانتینرهای داکر
+├── docker-compose.yml       # پیکربندی کانتینرهای داکر (پروفایل‌های OLS و Nginx)
 ├── .env.example             # نمونه متغیرهای محیطی
+├── ols/                     # پیکربندی وب‌سرور پرسرعت OpenLiteSpeed و کش LSCache
+│   ├── httpd_config.conf.template
+│   └── vhconf.conf.template
 ├── php/
 │   └── custom.ini           # کانفیگ بهینه‌شده PHP جهت آپلود فایل‌های سنگین
 ├── nginx/
 │   ├── nginx.conf           # کانفیگ اصلی Nginx با هدرهای امنیتی
 │   └── conf.d/
 │       ├── http.conf.template # کانفیگ موقت جهت تاییدیه Let's Encrypt
-│       └── ssl.conf.template  # کانفیگ نهایی HTTPS با پشتیبانی از HTTP/2
+│       └── ssl.conf.template  # کانفیگ نهایی HTTPS با پشتیبانی از HTTP/2 و OAuth
 ├── scripts/
 │   ├── ssl-init.sh          # اسکریپت صدور دو مرحله‌ای SSL
 │   └── db-create.sh         # اسکریپت ایجاد دیتابیس و یوزر جدید

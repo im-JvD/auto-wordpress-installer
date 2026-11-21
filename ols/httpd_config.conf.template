@@ -1,0 +1,82 @@
+# ==============================================================================
+# OpenLiteSpeed Server Configuration Template
+# Managed automatically by setup.sh - Do not edit directly
+# ==============================================================================
+
+serverName                ${DOMAIN_NAME}
+user                      www-data
+group                     www-data
+priority                  0
+inMemCacheSize            120M
+autoFix503                1
+gracefulRestartTimeout    300
+mime                      conf/mime.properties
+showVersionNumber         0
+adminEmails               root@localhost
+
+errorlog logs/error.log {
+  logLevel                WARN
+  rollingSize             10M
+  enableStderrLog         1
+}
+
+accesslog logs/access.log {
+  rollingSize             10M
+  keepDays                30
+  compressArchive         0
+}
+
+# External Application (LiteSpeed PHP - LSAPI)
+extprocessor lsphp {
+  type                    lsapi
+  address                 uds://tmp/lshttpd/lsphp.sock
+  maxConns                35
+  env                     PHP_LSAPI_CHILDREN=35
+  env                     LSAPI_AVOID_FORK=200M
+  initTimeout             600
+  retryTimeout            0
+  persistConn             1
+  respBuffer              0
+  autoStart               2
+  path                    fcgi-bin/lsphp
+  backlog                 100
+  runOnStartUp            1
+  extMaxIdleTime          300
+  priority                0
+  memSoftLimit            2047M
+  memHardLimit            2047M
+  procSoftLimit           400
+  procHardLimit           400
+}
+
+scriptHandler {
+  add                     lsapi:lsphp php
+}
+
+# HTTP Listener on Port ${HTTP_PORT}
+listener Default {
+  address                 *:${HTTP_PORT}
+  secure                  0
+  map                     localhost *
+}
+
+# HTTPS Listener on Port ${HTTPS_PORT} (HTTP/2, HTTP/3 & QUIC)
+listener HTTPS {
+  address                 *:${HTTPS_PORT}
+  secure                  1
+  keyFile                 /etc/letsencrypt/live/${DOMAIN_NAME}/privkey.pem
+  certFile                /etc/letsencrypt/live/${DOMAIN_NAME}/fullchain.pem
+  certChain               1
+  sslProtocol             24
+  enableQuic              1
+  enableHttp3             1
+  map                     localhost *
+}
+
+# Virtual Host Definition
+virtualHost localhost {
+  vhRoot                  /var/www/vhosts/localhost
+  configFile              conf/vhosts/localhost/vhconf.conf
+  allowSymbolLink         1
+  enableGzip              1
+}

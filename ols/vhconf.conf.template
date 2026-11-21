@@ -1,0 +1,96 @@
+# ==============================================================================
+# OpenLiteSpeed Virtual Host Configuration Template
+# Managed automatically by setup.sh - Do not edit directly
+# ==============================================================================
+
+docRoot                   $VH_ROOT/html/
+enableGzip                1
+enableBr                  1
+
+index  {
+  useServer               0
+  indexFiles              index.php, index.html
+  autoIndex               0
+}
+
+errorlog logs/error.log {
+  useServer               0
+  logLevel                WARN
+  rollingSize             10M
+}
+
+accesslog logs/access.log {
+  useServer               0
+  rollingSize             10M
+  keepDays                30
+}
+
+# Auto-load WordPress .htaccess
+rewrite  {
+  enable                  1
+  autoLoadHtaccess        1
+}
+
+# Certbot ACME Challenge context
+context /.well-known/acme-challenge {
+  location                /var/www/certbot/.well-known/acme-challenge
+  allowBrowse             1
+  rewrite {
+    enable                0
+  }
+}
+
+# Allow .well-known for OAuth 2.0 / OpenID Connect / REST API
+context /.well-known/ {
+  location                $VH_ROOT/html/.well-known/
+  allowBrowse             1
+  rewrite {
+    enable                0
+  }
+}
+
+# Protect sensitive hidden files (.env, .git, .htaccess)
+context ~ /\.(?!well-known) {
+  type                    NULL
+  allowBrowse             0
+  rewrite {
+    enable                0
+  }
+}
+
+# Deny direct execution of PHP files in uploads directory
+context ~* /(?:uploads|files)/.*\.php$ {
+  type                    NULL
+  allowBrowse             0
+  rewrite {
+    enable                0
+  }
+}
+
+# High-Performance PHP INI Overrides (Matches custom.ini)
+phpIniOverride {
+  php_admin_value upload_max_filesize "1024M"
+  php_admin_value post_max_size "1024M"
+  php_admin_value memory_limit "512M"
+  php_admin_value max_execution_time 600
+  php_admin_value max_input_time 600
+  php_admin_value max_input_vars 5000
+}
+
+# Native Server-Level Cache Module (LSCache for WordPress)
+module cache {
+  ls_enabled              1
+  check_private_cache     1
+  check_public_cache      1
+  max_cache_object_size   10000000
+  max_stale_age           200
+  qs_cache                1
+  req_cookie_cache        1
+  resp_cookie_cache       1
+  ignore_req_cache_ctrl   1
+  ignore_resp_cache_ctrl  0
+  enable_cache            0
+  expire_in_seconds       3600
+  enable_private_cache    0
+  private_expire_in_seconds 3600
+}

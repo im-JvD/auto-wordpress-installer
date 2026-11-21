@@ -19,10 +19,12 @@ services:
       retries: 5
       start_period: 20s
 
+  # Nginx Profile Services (Nginx + PHP-FPM)
   wordpress:
     image: ${WP_IMAGE:-wordpress:php8.3-fpm-alpine}
     container_name: wp_app
     restart: unless-stopped
+    profiles: ["nginx"]
     entrypoint: ${WP_ENTRYPOINT:-docker-entrypoint.sh php-fpm}
     environment:
       WORDPRESS_DB_HOST: db:3306
@@ -43,6 +45,7 @@ services:
     image: nginx:alpine
     container_name: wp_nginx
     restart: unless-stopped
+    profiles: ["nginx"]
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
@@ -56,6 +59,30 @@ services:
       - wp_network
     depends_on:
       - wordpress
+
+  # OpenLiteSpeed Profile Service (OLS + LSPHP + LSCache)
+  openlitespeed:
+    image: ${OLS_IMAGE:-litespeedtech/openlitespeed:latest-lsphp83}
+    container_name: wp_ols
+    restart: unless-stopped
+    profiles: ["ols"]
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - wp_data:/var/www/vhosts/localhost/html
+      - ./ols/conf/httpd_config.conf:/usr/local/lsws/conf/httpd_config.conf
+      - ./ols/conf/vhosts/localhost/vhconf.conf:/usr/local/lsws/conf/vhosts/localhost/vhconf.conf
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    environment:
+      - TZ=UTC
+    networks:
+      - wp_network
+    depends_on:
+      db:
+        condition: service_healthy
 
   certbot:
     image: certbot/certbot:latest
