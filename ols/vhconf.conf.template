@@ -7,6 +7,10 @@ docRoot                   $VH_ROOT/html/
 enableGzip                1
 enableBr                  1
 
+accessControl {
+  allow                   *
+}
+
 index  {
   useServer               0
   indexFiles              index.php, index.html
@@ -45,10 +49,22 @@ RewriteRule . /index.php [L]
 END_rules
 }
 
+# Static Assets Delivery Context (CSS, JS, Fonts, Media)
+context exp:^.*\.(css|js|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|eot)$ {
+  location                $DOC_ROOT/$0
+  allowBrowse             1
+  accessControl {
+    allow                 *
+  }
+}
+
 # Root Context for Static Assets & WordPress Documents (CSS, JS, Images, Media)
 context / {
   location                $VH_ROOT/html/
   allowBrowse             1
+  accessControl {
+    allow                 *
+  }
 
   rewrite  {
     enable                1
@@ -60,6 +76,9 @@ context / {
 context /.well-known/acme-challenge/ {
   location                /var/www/certbot/.well-known/acme-challenge/
   allowBrowse             1
+  accessControl {
+    allow                 *
+  }
 }
 
 # High-Performance PHP INI Overrides (Matches custom.ini)

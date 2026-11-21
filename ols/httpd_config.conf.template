@@ -14,6 +14,10 @@ mime                      conf/mime.properties
 showVersionNumber         0
 adminEmails               root@localhost
 
+accessControl {
+  allow                   *
+}
+
 errorlog logs/error.log {
   logLevel                WARN
   rollingSize             10M
