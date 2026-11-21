@@ -530,8 +530,8 @@ self_update() {
     local current_branch
     current_branch=$(git rev-parse --abbrev-ref HEAD)
 
-    log_info "Pulling latest updates for branch: ${current_branch}..."
-    if git pull origin "${current_branch}"; then
+    log_info "Syncing latest updates for branch: ${current_branch}..."
+    if git reset --hard "origin/${current_branch}"; then
         chmod +x setup.sh scripts/*.sh 2>/dev/null || true
         log_success "Script successfully updated to latest version."
         echo "Reloading script..."
