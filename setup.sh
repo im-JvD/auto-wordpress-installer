@@ -630,8 +630,13 @@ ensure_php_extensions() {
 
         if [ ${#missing_ols_pkgs[@]} -gt 0 ]; then
             log_info "Installing missing OpenLiteSpeed PHP extensions (${missing_ols_pkgs[*]})..."
-            docker exec wp_ols env DEBIAN_FRONTEND=noninteractive apt-get update -y -q >/dev/null 2>&1 || true
-            docker exec wp_ols env DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o Dpkg::Options::="--force-confold" --no-install-recommends "${missing_ols_pkgs[@]}" >/dev/null 2>&1 || true
+            if command -v timeout >/dev/null 2>&1; then
+                timeout 45s docker exec wp_ols env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout="10" update -y -q >/dev/null 2>&1 || true
+                timeout 60s docker exec wp_ols env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout="10" install -y -q -o Dpkg::Options::="--force-confold" --no-install-recommends "${missing_ols_pkgs[@]}" >/dev/null 2>&1 || true
+            else
+                docker exec wp_ols env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout="10" update -y -q >/dev/null 2>&1 || true
+                docker exec wp_ols env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout="10" install -y -q -o Dpkg::Options::="--force-confold" --no-install-recommends "${missing_ols_pkgs[@]}" >/dev/null 2>&1 || true
+            fi
             docker exec wp_ols pkill -9 lsphp 2>/dev/null || true
             docker exec wp_ols su -s /bin/sh nobody -c "PHP_LSAPI_CHILDREN=35 LSAPI_AVOID_FORK=200M /usr/local/lsws/fcgi-bin/lsphp -b 127.0.0.1:9000" >/dev/null 2>&1 || true
             docker exec wp_ols /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 || true
@@ -681,6 +686,12 @@ init_ols_container() {
     mkdir -p certbot/www/.well-known/acme-challenge
     chmod -R 777 certbot/www 2>/dev/null || true
 
+    local wp_volume_path
+    wp_volume_path=$(docker volume inspect --format '{{ .Mountpoint }}' wp_data 2>/dev/null || true)
+    if [[ -n "$wp_volume_path" && -d "$wp_volume_path" ]]; then
+        chmod -R 777 "$wp_volume_path" 2>/dev/null || true
+    fi
+
     log_info "Initializing OpenLiteSpeed environment and LSAPI PHP worker..."
     docker exec wp_ols sh -c '
         # 1. Create all required runtime directories
@@ -688,9 +699,7 @@ init_ols_container() {
 
         # 2. Set directory permissions and ownership (Fixes 403 Forbidden for static CSS/JS)
         chown -R nobody:nogroup /var/www/vhosts/localhost/html /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/lscache 2>/dev/null || true
-        find /var/www/vhosts/localhost/html -type d -exec chmod 755 {} + 2>/dev/null || true
-        find /var/www/vhosts/localhost/html -type f -exec chmod 644 {} + 2>/dev/null || true
-        chmod -R 777 /var/www/vhosts/localhost/html/wp-content /var/www/vhosts/localhost/lscache 2>/dev/null || true
+        chmod -R 777 /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache 2>/dev/null || true
         chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
 
         # 3. Locate active PHP binary and create standard symlinks
@@ -886,14 +895,11 @@ start_restart_stack() {
     log_info "Starting / restarting all active containers (${current_ws} stack)..."
     if [[ "$current_ws" == "openlitespeed" ]]; then
         sync_ols_config
-        docker compose up -d --force-recreate openlitespeed
-        init_ols_container
-        ensure_php_extensions
+        docker compose up -d openlitespeed
         init_ols_container
     else
         sync_nginx_config
         docker compose up -d
-        ensure_php_extensions
         docker exec wp_app chown -R www-data:www-data /var/www/html 2>/dev/null || true
         docker exec wp_app chmod -R 775 /var/www/html 2>/dev/null || true
     fi
