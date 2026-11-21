@@ -43,8 +43,18 @@ Designed with **strict isolation principles**:
 Run the following command on your Linux server (Ubuntu/Debian/CentOS/Rocky) to clone and launch the interactive manager:
 
 ```bash
-git clone https://github.com/<YOUR_USERNAME>/<YOUR_REPO>.git /opt/wp-docker && cd /opt/wp-docker && chmod +x setup.sh scripts/*.sh && sudo ./setup.sh
+git clone https://github.com/im-JvD/auto-wordpress-installer.git /opt/wp-docker && cd /opt/wp-docker && chmod +x setup.sh scripts/*.sh && sudo ./setup.sh
 ```
+
+### Global CLI Access (`wordpress` command)
+
+On first run, the script automatically creates a global shortcut `/usr/local/bin/wordpress`. After that, you can simply type:
+
+```bash
+wordpress
+```
+
+from anywhere in your terminal to open this management menu!
 
 ---
 

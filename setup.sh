@@ -53,6 +53,21 @@ check_root() {
 }
 
 # ------------------------------------------------------------------------------
+# Install Global CLI Shortcut ('wordpress')
+# ------------------------------------------------------------------------------
+install_cli_shortcut() {
+    local bin_path="/usr/local/bin/wordpress"
+    if [[ ! -f "$bin_path" ]] || ! grep -q "${SCRIPT_DIR}" "$bin_path" 2>/dev/null; then
+        cat <<EOF > "$bin_path"
+#!/usr/bin/env bash
+cd "${SCRIPT_DIR}" && sudo ./setup.sh "\$@"
+EOF
+        chmod +x "$bin_path"
+        log_info "Global CLI command registered: You can now type 'wordpress' anywhere to launch this script."
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # Read-Only Port 80 & 443 Conflict Check
 # ------------------------------------------------------------------------------
 check_ports() {
@@ -478,6 +493,11 @@ uninstall_stack() {
     rm -f .env nginx/conf.d/default.conf
     rm -rf certbot/conf/* certbot/www/*
 
+    if [[ -f "/usr/local/bin/wordpress" ]]; then
+        rm -f "/usr/local/bin/wordpress"
+        log_info "Removed global command /usr/local/bin/wordpress."
+    fi
+
     log_success "WordPress stack has been completely and safely removed."
 }
 
@@ -486,6 +506,7 @@ uninstall_stack() {
 # ------------------------------------------------------------------------------
 main_menu() {
     check_root
+    install_cli_shortcut
 
     while true; do
         echo ""
