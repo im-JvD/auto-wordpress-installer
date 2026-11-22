@@ -18,6 +18,13 @@ accessControl {
   allow                   *
 }
 
+fileAccessControl {
+  followSymbolLink          1
+  checkSymbolLink           0
+  requiredPermissionMask    000
+  restrictedPermissionMask  000
+}
+
 errorlog logs/error.log {
   logLevel                WARN
   rollingSize             10M

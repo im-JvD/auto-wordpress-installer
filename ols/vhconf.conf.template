@@ -49,29 +49,6 @@ RewriteRule . /index.php [L]
 END_rules
 }
 
-# Static Assets Delivery Context (CSS, JS, Fonts, Media)
-context exp:^.*\.(css|js|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|eot)$ {
-  location                $DOC_ROOT/$0
-  allowBrowse             1
-  accessControl {
-    allow                 *
-  }
-}
-
-# Root Context for Static Assets & WordPress Documents (CSS, JS, Images, Media)
-context / {
-  location                $VH_ROOT/html/
-  allowBrowse             1
-  accessControl {
-    allow                 *
-  }
-
-  rewrite  {
-    enable                1
-    autoLoadHtaccess      1
-  }
-}
-
 # Certbot ACME Challenge context
 context /.well-known/acme-challenge/ {
   location                /var/www/certbot/.well-known/acme-challenge/

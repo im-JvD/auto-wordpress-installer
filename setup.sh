@@ -719,7 +719,9 @@ init_ols_container() {
     local wp_volume_path
     wp_volume_path=$(docker volume inspect --format '{{ .Mountpoint }}' wp_data 2>/dev/null || true)
     if [[ -n "$wp_volume_path" && -d "$wp_volume_path" ]]; then
-        chmod -R 777 "$wp_volume_path" 2>/dev/null || true
+        chown -R 65534:65534 "$wp_volume_path" 2>/dev/null || true
+        find "$wp_volume_path" -type d -exec chmod 755 {} + 2>/dev/null || true
+        find "$wp_volume_path" -type f -exec chmod 644 {} + 2>/dev/null || true
     fi
 
     log_info "Initializing OpenLiteSpeed environment and LSAPI PHP worker..."
@@ -729,7 +731,9 @@ init_ols_container() {
 
         # 2. Set directory permissions and ownership (Fixes 403 Forbidden for static CSS/JS)
         chown -R nobody:nogroup /var/www/vhosts/localhost/html /usr/local/lsws/logs /usr/local/lsws/cgid /var/www/vhosts/localhost/lscache 2>/dev/null || true
-        chmod -R 777 /var/www/vhosts/localhost/html /var/www/vhosts/localhost/lscache 2>/dev/null || true
+        find /var/www/vhosts/localhost/html -type d -exec chmod 755 {} + 2>/dev/null || true
+        find /var/www/vhosts/localhost/html -type f -exec chmod 644 {} + 2>/dev/null || true
+        chmod -R 777 /var/www/vhosts/localhost/lscache 2>/dev/null || true
         chmod -R 755 /usr/local/lsws/fcgi-bin 2>/dev/null || true
 
         # 3. Locate active PHP binary and create standard symlinks
@@ -768,10 +772,10 @@ RewriteRule . /index.php [L]
 </IfModule>
 # END WordPress
 HTACCESS_EOF
-            chmod 666 /var/www/vhosts/localhost/html/.htaccess 2>/dev/null || true
+            chmod 664 /var/www/vhosts/localhost/html/.htaccess 2>/dev/null || true
             chown nobody:nogroup /var/www/vhosts/localhost/html/.htaccess 2>/dev/null || true
         else
-            chmod 666 /var/www/vhosts/localhost/html/.htaccess 2>/dev/null || true
+            chmod 664 /var/www/vhosts/localhost/html/.htaccess 2>/dev/null || true
             chown nobody:nogroup /var/www/vhosts/localhost/html/.htaccess 2>/dev/null || true
         fi
 
@@ -995,7 +999,8 @@ update_dependencies() {
     if [[ "$current_ws" == "openlitespeed" ]]; then
         sync_ols_config
         docker exec wp_ols chown -R nobody:nogroup /var/www/vhosts/localhost/html 2>/dev/null || true
-        docker exec wp_ols chmod -R 777 /var/www/vhosts/localhost/html 2>/dev/null || true
+        docker exec wp_ols find /var/www/vhosts/localhost/html -type d -exec chmod 755 {} + 2>/dev/null || true
+        docker exec wp_ols find /var/www/vhosts/localhost/html -type f -exec chmod 644 {} + 2>/dev/null || true
         init_ols_container
         ensure_php_extensions
     else
