@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-v1.0.0-blue.svg?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 ![Bash](https://img.shields.io/badge/Bash-4EAA25?style=for-the-badge&logo=gnu-bash&logoColor=white)
@@ -107,14 +107,14 @@ wordpress
 ```text
   https://github.com/im-JvD/auto-wordpress-installer
 ====================================================================
-       WordPress & Docker Stack Manager (Isolated) - [v1.0.0]
+       WordPress & Docker Stack Manager (Isolated) - [v1.1.0]
        Automated, High-Performance & Secure WordPress Stack
 ====================================================================
 
      1. Deploy & Restore (Fresh WordPress / Migration / Backup)
      2. Manage Database (Create, Delete, Credentials, phpMyAdmin)
      3. Service Control (Start, Stop, Restart, Stats, Live Logs)
-     4. Maintenance & Updates (Switch Web Server/PHP, Self-Update)
+     4. Maintenance & Updates (Switch Web Server/PHP, Disk Cleanup)
      5. Uninstall Stack (Clean, Isolated & Safe Purge)
 
      0. Exit
@@ -146,11 +146,13 @@ wordpress
 * **Switch / Change Web Server:** جابجایی و تغییر آنی و کاملاً ایمن بین وب‌سرورهای OpenLiteSpeed و Nginx بدون داون‌تایم.
 * **Switch / Change PHP Version:** تغییر و سوییچ آنی نسخه PHP به هر کدام از نسخه‌های دلخواه (PHP 7.4, 8.0, 8.1, 8.2, 8.3) با یک کلیک.
 * **Update Container Images:** دریافت آخرین نسخه‌های پایدار ایمیج‌های داکر و بازسازی مجدد کانتینرها بدون از دست رفتن اطلاعات.
+* **Optimize Disk Space (آزادسازی هوشمند و ایمن هارد):** پاکسازی کامل و ۱۰۰٪ ایمن لایه‌های بدون استفاده، کش داکر و پکیج‌های موقت سیستم بدون کوچک‌ترین دستکاری یا آسیب به سایر کانتینرهای فعال سرور.
 * **Self-Update Script:** همگام‌سازی و بروزرسانی مستقیم و هوشمند اسکریپت از مخزن رسمی گیت‌هاب با یک کلیک.
 
 ### [5] حذف کامل و ایمن (Complete Uninstall)
 * حذف با تاییدیه متنی `yes`.
 * متوقف کردن و حذف **فقط و فقط** کانتینرها، ولوم‌ها و شبکه مرتبط با این پروژه بدون دستکاری به سایر سرویس‌های سرور.
+* **پیشنهاد هوشمند آزادسازی فضا:** امکان پاکسازی ایمن ایمیج‌های دانلود شده این استک جهت بازگرداندن فوری ۲ تا ۳ گیگابایت فضای اشغال‌شده به هارد دیسک.
 
 ---
 

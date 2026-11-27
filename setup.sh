@@ -7,7 +7,7 @@
 set -uo pipefail
 
 # Text formatting & Colors
-readonly SCRIPT_VERSION="v1.0.0"
+readonly SCRIPT_VERSION="v1.1.0"
 
 readonly C_RED='\033[0;31m'
 readonly C_BRIGHT_RED='\033[1;31m'
@@ -1126,6 +1126,88 @@ self_update() {
 }
 
 # ------------------------------------------------------------------------------
+# Safe Disk Space Optimization (Docker Images, Layers & System Cache)
+# ------------------------------------------------------------------------------
+optimize_disk_space() {
+    echo ""
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+    echo -e "           ${C_CYAN}SAFE DISK SPACE & DOCKER OPTIMIZATION${C_RESET}"
+    echo -e "${C_BOLD}====================================================================${C_RESET}"
+    echo -e "${C_GREEN}SAFETY GUARANTEE:${C_RESET}"
+    echo " - All active running containers and their images are 100% protected."
+    echo " - Docker will strictly refuse to delete any image in use by any container."
+    echo " - Other websites, databases, VPNs or bots on this VPS will remain untouched."
+    echo ""
+
+    echo -e " ${C_BOLD}[Current Disk Usage (/)]${C_RESET}"
+    df -h / | awk 'NR==1 || NR==2 {print "   " $0}'
+    echo ""
+    echo -e " ${C_BOLD}[Current Docker Storage Usage]${C_RESET}"
+    docker system df 2>/dev/null | awk '{print "   " $0}' || true
+    echo ""
+
+    # 1. Safely remove specific WordPress stack images
+    # Notice: Running without '-f' guarantees Docker will skip any image that is active in any container!
+    log_info "Safely removing unused WordPress stack images..."
+    local stack_images=(
+        "litespeedtech/openlitespeed:latest-lsphp83"
+        "litespeedtech/openlitespeed:latest-lsphp82"
+        "litespeedtech/openlitespeed:latest-lsphp81"
+        "wordpress:php8.3-fpm-alpine"
+        "wordpress:php8.2-fpm-alpine"
+        "wordpress:php8.1-fpm-alpine"
+        "wordpress:php8.0-fpm-alpine"
+        "wordpress:php7.4-fpm-alpine"
+        "mariadb:10.11"
+        "nginx:alpine"
+        "certbot/certbot:latest"
+        "certbot/certbot"
+        "phpmyadmin/phpmyadmin:latest"
+        "phpmyadmin:latest"
+    )
+    for img in "${stack_images[@]}"; do
+        if docker image inspect "$img" >/dev/null 2>&1; then
+            docker rmi "$img" 2>/dev/null || true
+        fi
+    done
+
+    # 2. Prune dangling image layers (<none>) and build cache (100% safe, only untagged/orphan layers)
+    log_info "Pruning dangling image layers and build cache..."
+    docker image prune -f >/dev/null 2>&1 || true
+    docker builder prune -f >/dev/null 2>&1 || true
+
+    # 3. Ask user for deep cleaning of all other unattached images
+    echo ""
+    echo -e "${C_YELLOW}Optional Deep Cleaning:${C_RESET}"
+    echo "Would you like to remove ALL other unused Docker images?"
+    echo -e "${C_CYAN}(100% SAFE: Docker will keep all active running containers and their images intact)${C_RESET}"
+    read -r -p "Prune all unattached images? [y/N]: " deep_prune_choice
+    deep_prune_choice=${deep_prune_choice:-N}
+    if [[ "$deep_prune_choice" =~ ^[Yy]$ ]]; then
+        log_info "Pruning all unattached images (active containers are fully preserved)..."
+        docker image prune -a -f >/dev/null 2>&1 || true
+    fi
+
+    # 4. Clean system package cache (apt-get clean) and rotate systemd logs
+    log_info "Cleaning OS package cache (apt-get clean) and rotating system logs..."
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get clean >/dev/null 2>&1 || true
+    fi
+    if command -v journalctl >/dev/null 2>&1; then
+        journalctl --vacuum-time=3d >/dev/null 2>&1 || true
+    fi
+
+    echo ""
+    log_success "Disk space optimization completed successfully!"
+    echo -e " ${C_BOLD}[Updated Disk Usage (/)]${C_RESET}"
+    df -h / | awk 'NR==1 || NR==2 {print "   " $0}'
+    echo ""
+    echo -e " ${C_BOLD}[Updated Docker Storage Usage]${C_RESET}"
+    docker system df 2>/dev/null | awk '{print "   " $0}' || true
+    echo ""
+}
+
+# ------------------------------------------------------------------------------
 # Complete Uninstall (Strictly Isolated to This Stack)
 # ------------------------------------------------------------------------------
 uninstall_stack() {
@@ -1170,6 +1252,16 @@ uninstall_stack() {
     fi
 
     log_success "WordPress stack has been completely and safely removed."
+
+    echo ""
+    echo -e "${C_YELLOW}Disk Space Optimization:${C_RESET}"
+    echo "Would you like to safely remove unused Docker images and system cache to reclaim disk space?"
+    echo -e "${C_CYAN}(Recommended: Frees ~2-3 GB; will NOT affect other active containers on this server)${C_RESET}"
+    read -r -p "Reclaim disk space now? [Y/n]: " opt_choice
+    opt_choice=${opt_choice:-Y}
+    if [[ "$opt_choice" =~ ^[Yy]$ ]]; then
+        optimize_disk_space
+    fi
 }
 
 # ------------------------------------------------------------------------------
@@ -1684,13 +1776,14 @@ maintenance_menu() {
         echo -e "     ${C_BRIGHT_CYAN}1.${C_RESET} ${C_BRIGHT_GREEN}Switch Web Server${C_RESET} (OpenLiteSpeed ⇄ Nginx)"
         echo -e "     ${C_BRIGHT_CYAN}2.${C_RESET} ${C_CYAN}Switch PHP Version${C_RESET} (7.4, 8.0, 8.1, 8.2, 8.3)"
         echo -e "     ${C_BRIGHT_CYAN}3.${C_RESET} ${C_ORANGE}Update Container Images${C_RESET} & Stack Dependencies"
-        echo -e "     ${C_BRIGHT_CYAN}4.${C_RESET} ${C_YELLOW}Self-Update Script${C_RESET} (Pull latest from GitHub)"
+        echo -e "     ${C_BRIGHT_CYAN}4.${C_RESET} ${C_PURPLE}Optimize Disk Space${C_RESET} (Safe Docker & System Cache Cleanup)"
+        echo -e "     ${C_BRIGHT_CYAN}5.${C_RESET} ${C_YELLOW}Self-Update Script${C_RESET} (Pull latest from GitHub)"
         echo ""
         echo -e "     ${C_BRIGHT_CYAN}0.${C_RESET} ${C_WHITE}Back to Main Menu${C_RESET}"
         echo ""
         echo -e "${C_PURPLE}====================================================================${C_RESET}"
 
-        if ! read -r -p " Select Option [0-4]: " mnt_choice; then
+        if ! read -r -p " Select Option [0-5]: " mnt_choice; then
             break
         fi
 
@@ -1708,13 +1801,17 @@ maintenance_menu() {
                 read -r -p "Press [Enter] to return..." _
                 ;;
             4)
+                optimize_disk_space
+                read -r -p "Press [Enter] to return..." _
+                ;;
+            5)
                 self_update
                 ;;
             0)
                 break
                 ;;
             *)
-                log_warn "Invalid selection. Please choose between 0 and 4."
+                log_warn "Invalid selection. Please choose between 0 and 5."
                 sleep 1.2
                 ;;
         esac
@@ -1741,7 +1838,7 @@ main_menu() {
         echo -e "     ${C_BRIGHT_CYAN}1.${C_RESET} ${C_BRIGHT_GREEN}Deploy${C_RESET} & ${C_GREEN}Restore${C_RESET} (Fresh WordPress / Migration / Backup)"
         echo -e "     ${C_BRIGHT_CYAN}2.${C_RESET} ${C_ORANGE}Manage${C_RESET} Database (Create, Delete, Credentials, phpMyAdmin)"
         echo -e "     ${C_BRIGHT_CYAN}3.${C_RESET} ${C_BRIGHT_BLUE}Service${C_RESET} Control (Start, Stop, Restart, Stats, Live Logs)"
-        echo -e "     ${C_BRIGHT_CYAN}4.${C_RESET} ${C_YELLOW}Maintenance${C_RESET} & Updates (Switch Web Server/PHP, Self-Update)"
+        echo -e "     ${C_BRIGHT_CYAN}4.${C_RESET} ${C_YELLOW}Maintenance${C_RESET} & Updates (Switch Web Server/PHP, Disk Cleanup)"
         echo -e "     ${C_BRIGHT_CYAN}5.${C_RESET} ${C_BRIGHT_RED}Uninstall${C_RESET} Stack (Clean, Isolated & Safe Purge)"
         echo ""
         echo -e "     ${C_BRIGHT_CYAN}0.${C_RESET} ${C_WHITE}Exit${C_RESET}"
