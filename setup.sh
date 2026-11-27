@@ -917,6 +917,22 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
+# Disable Systemd Auto-Start Service
+# ------------------------------------------------------------------------------
+disable_systemd_service() {
+    log_info "Disabling systemd auto-start service (wp-docker.service)..."
+    if [[ -f /etc/systemd/system/wp-docker.service ]]; then
+        systemctl stop wp-docker.service >/dev/null 2>&1 || true
+        systemctl disable wp-docker.service >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/wp-docker.service
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        log_success "Systemd auto-start service 'wp-docker.service' has been disabled and removed."
+    else
+        log_info "Auto-start service is not installed or already disabled."
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # Start / Restart Stack Services
 # ------------------------------------------------------------------------------
 start_restart_stack() {
@@ -946,7 +962,9 @@ start_restart_stack() {
         docker exec wp_app chmod -R 775 /var/www/html 2>/dev/null || true
     fi
 
-    setup_systemd_service
+    if [[ -f /etc/systemd/system/wp-docker.service ]]; then
+        setup_systemd_service
+    fi
 
     log_success "All stack services (Web Server: ${current_ws}, Database, Certbot) are active and running."
 }
@@ -967,6 +985,14 @@ stop_stack() {
 
     log_info "Stopping all containers for this WordPress stack..."
     docker compose stop
+
+    # Automatically disable systemd auto-start so stack stays stopped across reboots
+    if [[ -f /etc/systemd/system/wp-docker.service ]]; then
+        systemctl stop wp-docker.service >/dev/null 2>&1 || true
+        systemctl disable wp-docker.service >/dev/null 2>&1 || true
+        log_info "Auto-start on boot disabled (services will NOT start upon server reboot)."
+    fi
+
     log_success "All stack services (Nginx / OpenLiteSpeed, WordPress, Database, Certbot) have been stopped."
     echo -e "${C_CYAN}Note: All files, databases, and SSL certificates remain safely stored in Docker volumes.${C_RESET}"
     echo -e "${C_CYAN}Ports are now temporarily freed.${C_RESET}"
@@ -1537,13 +1563,14 @@ service_menu() {
         echo -e "     ${C_BRIGHT_CYAN}2.${C_RESET} ${C_YELLOW}Stop${C_RESET} Stack Services (Safe Pause & Free Ports)"
         echo -e "     ${C_BRIGHT_CYAN}3.${C_RESET} ${C_CYAN}Service Status${C_RESET} & Resource Usage (Stats)"
         echo -e "     ${C_BRIGHT_CYAN}4.${C_RESET} ${C_ORANGE}View Service Logs${C_RESET} (Nginx/OLS, PHP, Database, Certbot)"
-        echo -e "     ${C_BRIGHT_CYAN}5.${C_RESET} ${C_WHITE}Enable Auto-Start${C_RESET} on Boot (systemd service)"
+        echo -e "     ${C_BRIGHT_CYAN}5.${C_RESET} ${C_BRIGHT_GREEN}Enable Auto-Start${C_RESET} on Boot (systemd service)"
+        echo -e "     ${C_BRIGHT_CYAN}6.${C_RESET} ${C_BRIGHT_RED}Disable Auto-Start${C_RESET} on Boot (systemd service)"
         echo ""
         echo -e "     ${C_BRIGHT_CYAN}0.${C_RESET} ${C_WHITE}Back to Main Menu${C_RESET}"
         echo ""
         echo -e "${C_PURPLE}====================================================================${C_RESET}"
 
-        if ! read -r -p " Select Option [0-5]: " srv_choice; then
+        if ! read -r -p " Select Option [0-6]: " srv_choice; then
             break
         fi
 
@@ -1567,11 +1594,15 @@ service_menu() {
                 setup_systemd_service
                 read -r -p "Press [Enter] to return..." _
                 ;;
+            6)
+                disable_systemd_service
+                read -r -p "Press [Enter] to return..." _
+                ;;
             0)
                 break
                 ;;
             *)
-                log_warn "Invalid selection. Please choose between 0 and 5."
+                log_warn "Invalid selection. Please choose between 0 and 6."
                 sleep 1.2
                 ;;
         esac
